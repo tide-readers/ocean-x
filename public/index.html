@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ocean-x</title>
+  <style>
+    :root {
+      --bg: #06111f;
+      --fg: #e8f1f8;
+      --muted: #7f97ad;
+      --accent: #4fd1c5;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      display: grid;
+      place-items: center;
+      background: radial-gradient(ellipse at 50% 120%, #0d2a44 0%, var(--bg) 60%);
+      color: var(--fg);
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      padding: 16px;
+    }
+    main { max-width: 36rem; text-align: center; }
+    h1 {
+      font-size: clamp(2.5rem, 8vw, 5rem);
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      margin: 0 0 0.5rem;
+    }
+    h1 span { color: var(--accent); }
+    p { color: var(--muted); font-size: 1.1rem; line-height: 1.5; margin: 0; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>ocean<span>-x</span></h1>
+    <p>The digital artifact is being built. Come back on presentation day.</p>
+  </main>
+</body>
+</html>
