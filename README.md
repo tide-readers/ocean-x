@@ -2,7 +2,7 @@
 
 The digital artifact for our immersive experience. Built by the Hyper Island MA class, working as one team, with Claude Code.
 
-**Live:** https://ocean-x-eight.vercel.app
+**Live:** https://ocean-x.tidereaders.org (also https://ocean-x-eight.vercel.app)
 
 ## How it fits together
 
