@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tide Readers</title>
+  <meta name="description" content="Hyper Island MA class, working as one team. The immersive experience and the digital artifact.">
+  <style>
+    :root {
+      --bg: #06111f;
+      --fg: #e8f1f8;
+      --muted: #7f97ad;
+      --accent: #4fd1c5;
+      --line: #1c3350;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      display: grid;
+      place-items: center;
+      background: radial-gradient(ellipse at 50% 120%, #0d2a44 0%, var(--bg) 60%);
+      color: var(--fg);
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      padding: 16px;
+    }
+    main { max-width: 34rem; width: 100%; }
+    h1 {
+      font-size: clamp(2.2rem, 7vw, 4rem);
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      margin: 0 0 0.5rem;
+    }
+    p.lead { color: var(--muted); font-size: 1.1rem; line-height: 1.5; margin: 0 0 2.5rem; }
+    .links { display: grid; gap: 12px; }
+    a.card {
+      display: block;
+      padding: 18px 20px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      color: var(--fg);
+      text-decoration: none;
+      background: rgba(255,255,255,0.02);
+      transition: border-color .15s, background .15s;
+    }
+    a.card:hover { border-color: var(--accent); background: rgba(79,209,197,0.06); }
+    a.card strong { display: block; font-size: 1.15rem; margin-bottom: 4px; }
+    a.card span { color: var(--muted); font-size: 0.95rem; }
+    footer { margin-top: 3rem; color: var(--muted); font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Tide Readers</h1>
+    <p class="lead">Ten people from the Hyper Island MA, working as one team.</p>
+
+    <div class="links">
+      <a class="card" href="https://ocean-x.tidereaders.org">
+        <strong>The digital artifact</strong>
+        <span>ocean-x, the interactive part of the immersive experience</span>
+      </a>
+      <a class="card" href="https://miro.com/app/board/uXjVEY2X9Mc=/">
+        <strong>The presentation</strong>
+        <span>run from our Miro board</span>
+      </a>
+    </div>
+
+    <footer>Hyper Island, Digital Innovation &amp; Strategic Leadership, 2026</footer>
+  </main>
+</body>
+</html>

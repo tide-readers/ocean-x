@@ -9,7 +9,7 @@ The digital artifact for our immersive experience. Built by the Hyper Island MA 
 - Talk: Slack workspace "Tide Readers"
 - Work and presentation: the class Miro board
 - Code: this repo
-- Hosting: Vercel, deploys `main` on every merge
+- Hosting: Vercel, deploys `main` on every merge. `public/` is the artifact, `site/` is the landing page at https://tidereaders.org
 
 ## Working on it
 
