@@ -149,6 +149,23 @@ body {
   font-weight: 600;
 }
 
+.label .choices { display: flex; flex-direction: column; gap: 8px; }
+.label .choices:empty { display: none; }
+.label .choices:not(:empty) { margin-top: 10px; }
+.label .choices button {
+  min-height: 44px;
+  padding: 8px 14px;
+  border: 1px solid var(--aqua);
+  border-radius: 12px;
+  background: #f1fbf7;
+  color: var(--ink);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
 .bar {
   display: flex;
   gap: 8px;

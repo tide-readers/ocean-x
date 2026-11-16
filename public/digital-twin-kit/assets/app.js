@@ -22,12 +22,17 @@ export const LABELS = {
   camera: { name: 'Camera', line: 'It only wakes up for the ocean.' },
 };
 
-// Deck, "07:35 · Chat module" slide.
+// Deck, "07:35 · Chat module" slide, as two turns. In each list the first entry is the deck's
+// line; the second is an LLM-written alternative for the team to review.
 export const CONVERSATION = [
-  { who: 'Lena', text: 'Why are you so tired?' },
-  { who: 'Kai',  text: 'Big haul today. Lots of wrappers like yours.' },
-  { who: 'Lena', text: 'What can I do?' },
-  { who: 'Kai',  text: "Try the lunchbox tomorrow. I'll show you the net after." },
+  {
+    lena: ['Why are you so tired?', 'What did you find today?'],
+    kai:  ['Big haul today. Lots of wrappers like yours.', 'A net full of wrappers. One looked like yours.'],
+  },
+  {
+    lena: ['What can I do?', 'Is it my fault?'],
+    kai:  ["Try the lunchbox tomorrow. I'll show you the net after.", "Not only yours. Bring the lunchbox tomorrow and I'll show you the net."],
+  },
 ];
 
 // Deck, Modules slide.
@@ -41,6 +46,37 @@ export const SOUNDS = [
   { key: 'seals',    name: 'Harbor seals',    file: '/digital-twin-kit/assets/harbor-seals-glacier-bay.mp3' },
 ];
 
+// Map module ("Radar") readouts. There is no public live feed for OceanXplorer: the oceanx.org
+// position box calls a private function on their site, and commercial AIS feeds need paid keys and
+// a server, which this project rules out. So the screen replays real, documented moments of the
+// ship and its vehicles, in order, with the date shown. `approx` marks coordinates taken from the
+// described location rather than a published fix. For dives, depth is the documented dive depth;
+// for the 2025 legs it is the seabed depth at the waypoint from GEBCO 2020 (api.opentopodata.org,
+// queried 16 Nov 2026). Place names are LLM-written.
+export const RADAR_POINTS = [
+  // Will Smith's dive in National Geographic's "Welcome to Earth" ("Descent into Darkness", 2021):
+  // about 1,000 m (3,300 ft) in a Triton submersible along the shelf edge east of the Bahamas.
+  // https://www.nationalgeographic.com/culture/article/how-a-global-odyssey-gave-will-smith-a-real-welcome-to-earth
+  { place: 'Shelf edge, Bahamas', when: '2021', lat: 24.7, lon: -77.4, depth: 1000, approx: true },
+  // NEOM brine pools, Gulf of Aqaba, found by ROV from OceanXplorer in 2020 at 1,770 m.
+  // https://www.nature.com/articles/s43247-022-00482-x
+  { place: 'Gulf of Aqaba, Red Sea', when: '2020', lat: 28.1, lon: 34.65, depth: 1770, approx: true },
+  // Seychelles 2024: ROV Chimaera to 4,603 m in the Amirantes Trench.
+  // https://www.oceanx.org/missions/seychelles-2024 and https://nation.sc/articles/21066/archive
+  { place: 'Amirantes Trench, Seychelles', when: 'Jan 2024', lat: -6.0, lon: 53.5, depth: 4603, approx: true },
+  // Indonesia 2024: deep-sea coral reefs; a 4,800 m dive reported by Indonesian officials.
+  // https://indonesia.go.id/kategori/culture/8385/indonesia-s-ocean-exploration-mission?lang=2
+  { place: 'Indonesia (reported)', when: 'Jul 2024', lat: -9.5, lon: 109.5, depth: 4800, approx: true },
+  // Around Africa 2025, NASA/OceanX campaign: one waypoint per dated leg in SeaBASS OCEANX_2025,
+  // https://seabass.gsfc.nasa.gov/experiment/OCEANX_2025/ (cruise pages OXR20250108 .. OXR20250403).
+  { place: 'Seychelles plateau', when: '8–17 Jan 2025', lat: -5.2, lon: 56.0, depth: 54 },
+  { place: 'Mozambique Channel', when: '18–26 Jan 2025', lat: -10.5, lon: 44.5, depth: 3519 },
+  { place: 'Off the Cape', when: '31 Jan–20 Feb 2025', lat: -35.5, lon: 20.0, depth: 161 },
+  { place: 'Gulf of Guinea', when: '1–22 Mar 2025', lat: -10.0, lon: -2.0, depth: 4871 },
+  { place: 'Equatorial Atlantic', when: '7–23 Mar 2025', lat: 0.5, lon: -10.0, depth: 4729 },
+  { place: 'Off Cabo Verde', when: '3–5 Apr 2025', lat: 18.5, lon: -24.0, depth: 3797 },
+];
+
 // LLM-written UI strings, for the team to review.
 const UI = {
   modulesTitle: 'Modules',
@@ -48,9 +84,12 @@ const UI = {
   swapNext: 'Now tap the module to swap it with.',
   chatHint: 'Tap the screen to talk to Kai.',
   chatNext: 'Tap the screen for the next line.',
+  chatChoose: 'Pick what Lena says.',
   soundHint: 'Tap the speaker to listen.',
   soundStop: 'Tap the speaker to stop.',
   soundStep: 'Orange and green change the sound.',
+  drawHint: 'Draw on the screen. The down arrow clears it. Tap the pen to put it back.',
+  mapHint: 'Real OceanX dives and positions, replayed.',
   // v2 camera screen. Button labels live in index.html.
   povHint: 'Tap the bin where the wrapper goes.',
   binPlastic: 'Plastic',
@@ -205,7 +244,8 @@ function decal(w, h, texture, z = FRONT + 0.0015) {
 const TEX = {};
 
 // Notes screen. Content follows kit-reference.jpg (code-style notes).
-TEX.notes = canvasTexture(512, 464, (ctx, w, h) => {
+// Kept as a named function so the screen can be redrawn to clear the visitor's ink.
+function drawNotes(ctx, w, h) {
   ctx.fillStyle = '#141614';
   ctx.fillRect(0, 0, w, h);
   const lines = [
@@ -238,11 +278,28 @@ TEX.notes = canvasTexture(512, 464, (ctx, w, h) => {
       x += ctx.measureText(text).width;
     }
   });
-});
+}
+TEX.notes = canvasTexture(512, 464, drawNotes);
 
-// Chat screen. Kai's face area, drawn as a soft video-call frame (no photo).
-// Redrawn with a caption while the conversation plays.
-function drawChat(ctx, w, h, caption) {
+// Chat screen: Kai on a video call. Uses the deck's portrait (assets/kai.jpg) with a slow
+// zoom, scanlines and captions; falls back to a drawn silhouette until the image loads.
+const kaiImg = new Image();
+let kaiReady = false;
+kaiImg.onload = () => { kaiReady = true; setChatCaption(chatCaption); if (window.kit) window.kit.requestRender(); };
+kaiImg.src = '/digital-twin-kit/assets/kai.jpg';
+function drawChat(ctx, w, h, caption, t = 0) {
+  if (kaiReady) {
+    const zoom = reducedMotion ? 1.04 : 1.04 + 0.035 * Math.sin(t / 1300);
+    const dw = w * zoom, dh = h * zoom;
+    ctx.drawImage(kaiImg, (w - dw) / 2, (h - dh) / 2 - 6, dw, dh);
+    const tint = ctx.createLinearGradient(0, 0, 0, h);
+    tint.addColorStop(0, 'rgba(22, 34, 42, 0.18)');
+    tint.addColorStop(1, 'rgba(22, 34, 42, 0.38)');
+    ctx.fillStyle = tint;
+    ctx.fillRect(0, 0, w, h);
+    drawChatOverlay(ctx, w, h, caption);
+    return;
+  }
   const bg = ctx.createLinearGradient(0, 0, 0, h);
   bg.addColorStop(0, '#2b3a44');
   bg.addColorStop(1, '#16222a');
@@ -280,6 +337,9 @@ function drawChat(ctx, w, h, caption) {
     ctx.arc(w * 0.5 + dx, h * 0.4, 4.5, 0, Math.PI * 2);
     ctx.fill();
   }
+  drawChatOverlay(ctx, w, h, caption);
+}
+function drawChatOverlay(ctx, w, h, caption) {
   // scanlines
   ctx.fillStyle = 'rgba(0, 0, 0, 0.12)';
   for (let y = 0; y < h; y += 4) ctx.fillRect(0, y, w, 1);
@@ -288,6 +348,17 @@ function drawChat(ctx, w, h, caption) {
   ctx.beginPath();
   ctx.arc(w - 28, 28, 8, 0, Math.PI * 2);
   ctx.fill();
+  if (caption && caption.typing) {
+    ctx.fillStyle = 'rgba(19, 19, 18, 0.82)';
+    ctx.fillRect(0, h - 96, w, 96);
+    ctx.font = '600 22px system-ui, -apple-system, "Segoe UI", sans-serif';
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = '#e8873a';
+    ctx.fillText(caption.who, 20, h - 84);
+    ctx.fillStyle = '#e9dfd8';
+    for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.arc(32 + i * 22, h - 36, 6, 0, Math.PI * 2); ctx.fill(); }
+    return;
+  }
   if (caption) {
     ctx.fillStyle = 'rgba(19, 19, 18, 0.82)';
     ctx.fillRect(0, h - 96, w, 96);
@@ -309,14 +380,17 @@ function drawChat(ctx, w, h, caption) {
   }
 }
 TEX.chat = canvasTexture(512, 352, (ctx, w, h) => drawChat(ctx, w, h, null));
-function setChatCaption(caption) {
+let chatCaption = null;
+function setChatCaption(caption, t) {
+  chatCaption = caption;
   const c = TEX.chat.image;
-  drawChat(c.getContext('2d'), c.width, c.height, caption);
+  drawChat(c.getContext('2d'), c.width, c.height, caption, t);
   TEX.chat.needsUpdate = true;
 }
 
-// Map screen. Gold contour map with a turtle, following kit-reference.jpg.
-TEX.map = canvasTexture(512, 420, (ctx, w, h) => {
+// Map screen. Gold contour map with a turtle, following kit-reference.jpg. The static part is
+// drawn once; the readouts are redrawn on top as the replay runs (see drawMapReadout).
+function drawMapBase(ctx, w, h) {
   ctx.fillStyle = '#0f120f';
   ctx.fillRect(0, 0, w, h);
   ctx.strokeStyle = 'rgba(217, 168, 58, 0.18)';
@@ -363,16 +437,72 @@ TEX.map = canvasTexture(512, 420, (ctx, w, h) => {
     ctx.stroke();
   }
   ctx.restore();
-  // readouts, approximated from the render
-  ctx.fillStyle = '#e6b94a';
-  ctx.font = '16px ui-monospace, Menlo, Consolas, monospace';
-  ctx.textBaseline = 'top';
-  ['LAT 16.71° N', 'LON 60.01° W', 'DEP 0.57 m'].forEach((t, i) => ctx.fillText(t, 18, 16 + i * 22));
   for (let i = 0; i < 4; i++) {
     ctx.fillStyle = i < 3 ? '#e6b94a' : 'rgba(230, 185, 74, 0.3)';
     ctx.fillRect(18 + i * 18, h - 30, 13, 13);
   }
-});
+}
+const mapBase = document.createElement('canvas');
+mapBase.width = 512; mapBase.height = 420;
+drawMapBase(mapBase.getContext('2d'), mapBase.width, mapBase.height);
+TEX.map = canvasTexture(512, 420, (ctx) => ctx.drawImage(mapBase, 0, 0));
+
+function fmtCoord(v, pos, neg) {
+  return Math.abs(v).toFixed(2) + '\u00b0 ' + (v >= 0 ? pos : neg);
+}
+function drawMapReadout(r) {
+  const c = TEX.map.image;
+  const ctx = c.getContext('2d');
+  const w = c.width, h = c.height;
+  ctx.drawImage(mapBase, 0, 0);
+  ctx.fillStyle = 'rgba(15, 18, 15, 0.7)';
+  ctx.fillRect(10, 10, 190, 76);
+  ctx.fillStyle = '#e6b94a';
+  ctx.font = '16px ui-monospace, Menlo, Consolas, monospace';
+  ctx.textBaseline = 'top';
+  ctx.textAlign = 'left';
+  ['LAT ' + fmtCoord(r.lat, 'N', 'S'), 'LON ' + fmtCoord(r.lon, 'E', 'W'), 'DEP ' + Math.round(r.dep) + ' m']
+    .forEach((t, i) => ctx.fillText(t, 18, 16 + i * 22));
+  ctx.textAlign = 'right';
+  ctx.font = '600 14px system-ui, -apple-system, "Segoe UI", sans-serif';
+  const line = (r.point.approx ? '~ ' : '') + r.point.place;
+  const wl = Math.max(ctx.measureText(line).width, ctx.measureText(r.point.when).width) + 20;
+  ctx.fillStyle = 'rgba(15, 18, 15, 0.7)';
+  ctx.fillRect(w - 18 - wl, h - 54, wl, 42);
+  ctx.fillStyle = '#e6b94a';
+  ctx.fillText(line, w - 28, h - 50);
+  ctx.font = '13px ui-monospace, Menlo, Consolas, monospace';
+  ctx.fillText(r.point.when, w - 28, h - 32);
+  ctx.textAlign = 'left';
+  TEX.map.needsUpdate = true;
+}
+
+// Where the replay is at a given time: travel between points, then the dive at each one.
+const RADAR = { travel: 20000, down: 6000, hold: 6000, up: 3000, t0: performance.now() };
+function radarState(now) {
+  const legMs = RADAR.travel + RADAR.down + RADAR.hold + RADAR.up;
+  const n = RADAR_POINTS.length;
+  const cycle = legMs * n;
+  // Frame timestamps can precede t0 on the first frame; keep the modulo positive.
+  const total = (((now - RADAR.t0) % cycle) + cycle) % cycle;
+  const i = Math.floor(total / legMs);
+  const u = total - i * legMs;
+  const from = RADAR_POINTS[(i - 1 + n) % n];
+  const to = RADAR_POINTS[i];
+  let lat = to.lat, lon = to.lon, dep = 0;
+  if (u < RADAR.travel) {
+    const k = ease.inOutCubic(u / RADAR.travel);
+    lat = from.lat + (to.lat - from.lat) * k;
+    lon = from.lon + (to.lon - from.lon) * k;
+  } else if (u < RADAR.travel + RADAR.down) {
+    dep = to.depth * ease.inOutCubic((u - RADAR.travel) / RADAR.down);
+  } else if (u < RADAR.travel + RADAR.down + RADAR.hold) {
+    dep = to.depth;
+  } else {
+    dep = to.depth * (1 - ease.inOutCubic((u - RADAR.travel - RADAR.down - RADAR.hold) / RADAR.up));
+  }
+  return { lat, lon, dep, point: to, moving: u < RADAR.travel };
+}
 
 // Sound module speaker grille: dark disc with cream slot bars.
 TEX.grille = canvasTexture(256, 256, (ctx, w, h) => {
@@ -489,7 +619,9 @@ function notesModule() {
   g.name = 'notes';
   g.add(screen(0.44, 0.40, TEX.notes));
   g.add(at(decal(0.07, 0.07, TEX.arrowUp), 0, 0.265, FRONT + 0.0015));
-  g.add(at(decal(0.07, 0.07, TEX.arrowDown), 0, -0.265, FRONT + 0.0015));
+  const arrowDown = at(decal(0.07, 0.07, TEX.arrowDown), 0, -0.265, FRONT + 0.0015);
+  arrowDown.userData.hit = 'clear'; // clears the visitor's ink while drawing
+  g.add(arrowDown);
 
   // Stylus clipped to the left side: silver body, yellow cap and clip.
   const stylus = new THREE.Group();
@@ -509,7 +641,9 @@ function notesModule() {
   clip.position.set(0.028, 0.2, 0);
   stylus.add(clip);
   stylus.position.set(-MOD.w / 2 - 0.028, 0.03, 0.08);
+  stylus.traverse((o) => { o.userData.hit = 'pen'; });
   g.add(stylus);
+  g.userData.stylus = stylus;
   return g;
 }
 
@@ -755,6 +889,7 @@ const labelEl = document.getElementById('label');
 const labelName = document.getElementById('label-name');
 const labelLine = document.getElementById('label-line');
 const labelHint = document.getElementById('label-hint');
+const labelChoices = document.getElementById('label-choices');
 const btnApart = document.getElementById('btn-apart');
 const btnReset = document.getElementById('btn-reset');
 const btnCamera = document.getElementById('btn-camera');
@@ -891,7 +1026,7 @@ if (renderer) {
   function resetView() {
     controls.enabled = false;
     tween(camera.position, { x: home.position.x, y: home.position.y, z: home.position.z }, 550, ease.inOutCubic);
-    tween(controls.target, { x: home.target.x, y: home.target.y, z: home.target.z }, 550, ease.inOutCubic, 0, () => { controls.enabled = true; });
+    tween(controls.target, { x: home.target.x, y: home.target.y, z: home.target.z }, 550, ease.inOutCubic, 0, () => { controls.enabled = !drawing; });
   }
   btnReset.disabled = false;
   btnReset.addEventListener('click', resetView);
@@ -903,6 +1038,7 @@ if (renderer) {
   const APART = { x: 0.26, y: 0.17, z: 0.08 };
   let apart = false;
   function setApart(next) {
+    if (drawing) setDrawing(false);
     apart = next;
     const holders = device.userData.holders;
     const slots = device.userData.slots;
@@ -979,17 +1115,25 @@ if (renderer) {
     if (mode === 'pov') { labelEl.hidden = true; return; }
     if (mode === 'camera') {
       name = LABELS.camera.name; line = LABELS.camera.line; anchor = 'camera';
+    } else if (drawing) {
+      name = LABELS.notes.name; line = LABELS.notes.line; hint = UI.drawHint; anchor = 'notes';
     } else if (talk.index >= 0) {
-      const l = CONVERSATION[talk.index];
-      name = LABELS.chat.name; speaker = l.who; line = l.text;
-      hint = talk.index < CONVERSATION.length - 1 ? UI.chatNext : '';
-      anchor = 'chat';
+      name = LABELS.chat.name; anchor = 'chat';
+      if (talk.phase === 'choose') {
+        hint = UI.chatChoose;
+      } else if (chatCaption && !chatCaption.typing) {
+        speaker = chatCaption.who; line = chatCaption.text;
+        if (talk.phase === 'kai') hint = UI.chatNext;
+      } else if (chatCaption) {
+        speaker = 'Kai'; line = '…';
+      }
     } else if (selected) {
       name = LABELS[selected].name; line = LABELS[selected].line; hint = UI.swapNext; anchor = selected;
     } else if (focused) {
       name = LABELS[focused].name; line = LABELS[focused].line; anchor = focused;
       if (apart && focused !== 'camera') hint = UI.swapHint;
       else if (focused === 'chat') hint = UI.chatHint;
+      else if (focused === 'map') hint = UI.mapHint;
       else if (focused === 'sound') hint = `${soundIndex + 1}/${SOUNDS.length} ${SOUNDS[soundIndex].name}. ${listening ? UI.soundStop : UI.soundHint} ${UI.soundStep}`;
     } else if (apart) {
       name = UI.modulesTitle; line = MODULES_CONTEXT; hint = UI.swapHint;
@@ -1005,6 +1149,16 @@ if (renderer) {
     }
     labelLine.appendChild(document.createTextNode(line));
     labelHint.textContent = hint;
+    labelChoices.textContent = '';
+    if (talk.awaiting) {
+      CONVERSATION[talk.turn].lena.forEach((text, i) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = text;
+        b.addEventListener('click', () => talk.choose(i));
+        labelChoices.appendChild(b);
+      });
+    }
     placeLabel(anchor);
     labelEl.hidden = false;
   }
@@ -1030,26 +1184,42 @@ if (renderer) {
   // -------------------------------------------------------------------------
   // Interaction 4: talk to Kai. Tap the Chat screen; lines play one at a time.
   // -------------------------------------------------------------------------
-  const LINE_MS = 3000;
+  // The visitor picks Lena's line each turn; Kai answers. Phases: choose, lena, typing, kai.
   const talk = {
-    index: -1,
+    turn: -1,
+    phase: 'idle',
     timer: 0,
-    show(i) {
+    get index() { return this.turn; },
+    get awaiting() { return this.phase === 'choose'; },
+    set(phase, caption, nextMs, next) {
       clearTimeout(this.timer);
-      this.index = i;
-      if (i >= CONVERSATION.length) {
-        this.index = -1;
-        setChatCaption(null);
-      } else {
-        setChatCaption(CONVERSATION[i]);
-        this.timer = setTimeout(() => this.show(i + 1), LINE_MS);
-      }
+      this.phase = phase;
+      setChatCaption(caption, performance.now());
       needsRender = true;
       renderLabel();
+      if (next) this.timer = setTimeout(next, reducedMotion ? Math.min(nextMs, 900) : nextMs);
     },
-    start() { this.show(0); },
-    advance() { this.show(this.index + 1); },
-    stop() { clearTimeout(this.timer); if (this.index >= 0) this.show(CONVERSATION.length); },
+    start() { this.turn = 0; this.set('choose', null); },
+    choose(i) {
+      if (this.phase !== 'choose') return;
+      const t = CONVERSATION[this.turn];
+      this.reply = t.kai[i];
+      this.set('lena', { who: 'Lena', text: t.lena[i] }, 1500, () =>
+        this.set('typing', { who: 'Kai', typing: true }, 900, () => this.showKai()));
+    },
+    showKai() {
+      this.set('kai', { who: 'Kai', text: this.reply }, 3200, () => this.next());
+    },
+    next() {
+      if (this.turn + 1 < CONVERSATION.length) { this.turn += 1; this.set('choose', null); }
+      else this.stop();
+    },
+    advance() {
+      // A tap on the screen skips the wait.
+      if (this.phase === 'lena' || this.phase === 'typing') this.showKai();
+      else if (this.phase === 'kai') this.next();
+    },
+    stop() { clearTimeout(this.timer); this.turn = -1; this.phase = 'idle'; setChatCaption(null); needsRender = true; renderLabel(); },
   };
 
   // -------------------------------------------------------------------------
@@ -1127,13 +1297,93 @@ if (renderer) {
     renderLabel();
   }
 
+  // -------------------------------------------------------------------------
+  // v3: draw on the Notes screen. Tap the pen to pick it up; drag on the screen to draw.
+  // -------------------------------------------------------------------------
+  let drawing = false;
+  let stroke = null;
+  const stylus = parts.notes.group.userData.stylus;
+  const stylusHome = stylus.position.clone();
+  let notesPlane = null;
+  parts.notes.group.traverse((o) => { if (!notesPlane && o.userData.hit === 'screen') notesPlane = o; });
+  const notesCanvas = TEX.notes.image;
+  const notesCtx = notesCanvas.getContext('2d');
+  const notesCenter = new THREE.Vector3();
+
+  function setDrawing(next) {
+    if (next === drawing) return;
+    drawing = next;
+    stroke = null;
+    if (drawing) {
+      tween(stylus.position, { x: stylusHome.x + 0.06, y: stylusHome.y + 0.05, z: stylusHome.z + 0.16 }, 350, ease.outBack);
+      tween(stylus.rotation, { x: 0.35, z: -0.4 }, 350);
+      controls.enabled = false;
+      setFocus('notes');
+      // Move in on the Notes module so there is room to draw.
+      parts.notes.group.getWorldPosition(notesCenter);
+      const pos = notesCenter.clone().add(camera.position.clone().sub(notesCenter).multiplyScalar(0.55));
+      tween(camera.position, { x: pos.x, y: pos.y, z: pos.z }, 500, ease.inOutCubic);
+      tween(controls.target, { x: notesCenter.x, y: notesCenter.y, z: notesCenter.z }, 500, ease.inOutCubic);
+    } else {
+      tween(stylus.position, { x: stylusHome.x, y: stylusHome.y, z: stylusHome.z }, 350, ease.outCubic);
+      tween(stylus.rotation, { x: 0, z: 0 }, 350);
+      resetView(); // re-enables the controls when it lands
+    }
+    renderLabel();
+  }
+
+  function screenUV(clientX, clientY) {
+    const r = canvasEl.getBoundingClientRect();
+    pointer.set(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
+    raycaster.setFromCamera(pointer, camera);
+    const hit = raycaster.intersectObject(notesPlane, false)[0];
+    return hit && hit.uv ? hit.uv : null;
+  }
+
+  function inkTo(uv, begin) {
+    const x = uv.x * notesCanvas.width;
+    const y = (1 - uv.y) * notesCanvas.height;
+    if (begin) {
+      notesCtx.beginPath();
+      notesCtx.moveTo(x, y);
+      notesCtx.lineTo(x + 0.01, y);
+    } else {
+      notesCtx.lineTo(x, y);
+    }
+    notesCtx.strokeStyle = '#9FE6D2';
+    notesCtx.lineWidth = 6;
+    notesCtx.lineCap = 'round';
+    notesCtx.lineJoin = 'round';
+    notesCtx.stroke();
+    notesCtx.beginPath();
+    notesCtx.moveTo(x, y);
+    TEX.notes.needsUpdate = true;
+    needsRender = true;
+  }
+
+  function clearInk() {
+    drawNotes(notesCtx, notesCanvas.width, notesCanvas.height);
+    TEX.notes.needsUpdate = true;
+    needsRender = true;
+  }
+
   // Pointer handling: hover for mouse, tap for touch and pen. Drags go to OrbitControls.
   let down = null;
   let lastTap = 0;
   canvasEl.addEventListener('pointerdown', (e) => {
+    if (drawing && mode === 'kit') {
+      const uv = screenUV(e.clientX, e.clientY);
+      if (uv) { stroke = true; inkTo(uv, true); down = null; return; }
+    }
     down = { x: e.clientX, y: e.clientY, t: performance.now(), type: e.pointerType };
   });
   canvasEl.addEventListener('pointermove', (e) => {
+    if (stroke && e.buttons) {
+      const uv = screenUV(e.clientX, e.clientY);
+      if (uv) inkTo(uv, false);
+      return;
+    }
+    if (drawing) return; // no hover changes while the pen is out
     if (e.pointerType !== 'mouse' || e.buttons) return;
     const hit = partAt(e.clientX, e.clientY);
     if (mode === 'pov') pov.hover(hit.bin); else setFocus(hit.part);
@@ -1143,6 +1393,7 @@ if (renderer) {
     if (mode === 'pov') pov.hover(null); else if (!selected) setFocus(null);
   });
   canvasEl.addEventListener('pointerup', (e) => {
+    stroke = null;
     if (!down) return;
     const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
     const held = performance.now() - down.t;
@@ -1159,7 +1410,7 @@ if (renderer) {
     lastTap = now;
     tap(hit, e.pointerType === 'mouse');
   });
-  canvasEl.addEventListener('pointercancel', () => { down = null; });
+  canvasEl.addEventListener('pointercancel', () => { down = null; stroke = null; });
 
   function tap({ part, area, bin }, isMouse) {
     if (mode === 'pov') { if (bin) pov.throwInto(bin); return; }
@@ -1167,7 +1418,13 @@ if (renderer) {
     const wasFocused = focused === part;
     setFocus(part);
     if (mode === 'camera') return;
+    if (drawing) {
+      if (part === 'notes' && area === 'pen') setDrawing(false);
+      else if (part === 'notes' && area === 'clear') clearInk();
+      return;
+    }
     if (!part) { selectForSwap(null); return; }
+    if (!apart && part === 'notes' && area === 'pen' && (isMouse || wasFocused)) { setDrawing(true); return; }
 
     if (apart) {
       if (part === 'camera') return;
@@ -1362,7 +1619,7 @@ if (renderer) {
 
   function setMode(next) {
     if (next === mode) return;
-    if (mode === 'kit') { talk.stop(); if (listening) stopListening(); selectForSwap(null); }
+    if (mode === 'kit') { talk.stop(); if (listening) stopListening(); selectForSwap(null); if (drawing) setDrawing(false); }
     if (mode === 'pov') pov.leave();
     setFocus(null);
     mode = next;
@@ -1403,9 +1660,21 @@ if (renderer) {
   const playLight = parts.sound.group.userData.playLight;
   playLight.emissive.set(C.aqua);
   playLight.emissiveIntensity = 0;
+  let chatDrawnAt = 0;
+  let mapDrawnAt = 0;
   function tick(now) {
     const animating = updateTweens(now);
     const moved = controls.update();
+    if (mode === 'kit' && now - mapDrawnAt > 200) {
+      mapDrawnAt = now;
+      drawMapReadout(radarState(now));
+      needsRender = true;
+    }
+    if (mode === 'kit' && !reducedMotion && kaiReady && (focused === 'chat' || talk.index >= 0) && now - chatDrawnAt > 80) {
+      chatDrawnAt = now;
+      setChatCaption(chatCaption, now);
+      needsRender = true;
+    }
     if (listening) {
       playLight.emissiveIntensity = 0.35 + 0.35 * Math.sin(now / 160);
       needsRender = true;
@@ -1428,7 +1697,7 @@ if (renderer) {
   // Exposed for the next steps and for poking at in the console.
   window.kit = {
     THREE, scene, camera, renderer, controls, world, device, cam, parts, LABELS, reducedMotion, povScene, povCamera, pov,
-    get mode() { return mode; }, setMode,
-    setFocus, setApart, resetView, talk, toggleListen, stepSound, get soundIndex() { return soundIndex; }, selectForSwap, swapModules, requestRender: () => { needsRender = true; },
+    get mode() { return mode; }, setMode, radarState, RADAR_POINTS,
+    setFocus, setApart, resetView, talk, toggleListen, stepSound, setDrawing, clearInk, get drawing() { return drawing; }, get soundIndex() { return soundIndex; }, selectForSwap, swapModules, requestRender: () => { needsRender = true; },
   };
 }
