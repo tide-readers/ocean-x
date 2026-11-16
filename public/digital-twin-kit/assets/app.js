@@ -22,12 +22,17 @@ export const LABELS = {
   camera: { name: 'Camera', line: 'It only wakes up for the ocean.' },
 };
 
-// Deck, "07:35 · Chat module" slide.
+// Deck, "07:35 · Chat module" slide, as two turns. In each list the first entry is the deck's
+// line; the second is an LLM-written alternative for the team to review.
 export const CONVERSATION = [
-  { who: 'Lena', text: 'Why are you so tired?' },
-  { who: 'Kai',  text: 'Big haul today. Lots of wrappers like yours.' },
-  { who: 'Lena', text: 'What can I do?' },
-  { who: 'Kai',  text: "Try the lunchbox tomorrow. I'll show you the net after." },
+  {
+    lena: ['Why are you so tired?', 'What did you find today?'],
+    kai:  ['Big haul today. Lots of wrappers like yours.', 'A net full of wrappers. One looked like yours.'],
+  },
+  {
+    lena: ['What can I do?', 'Is it my fault?'],
+    kai:  ["Try the lunchbox tomorrow. I'll show you the net after.", "Not only yours. Bring the lunchbox tomorrow and I'll show you the net."],
+  },
 ];
 
 // Deck, Modules slide.
@@ -48,6 +53,7 @@ const UI = {
   swapNext: 'Now tap the module to swap it with.',
   chatHint: 'Tap the screen to talk to Kai.',
   chatNext: 'Tap the screen for the next line.',
+  chatChoose: 'Pick what Lena says.',
   soundHint: 'Tap the speaker to listen.',
   soundStop: 'Tap the speaker to stop.',
   soundStep: 'Orange and green change the sound.',
@@ -243,9 +249,25 @@ function drawNotes(ctx, w, h) {
 }
 TEX.notes = canvasTexture(512, 464, drawNotes);
 
-// Chat screen. Kai's face area, drawn as a soft video-call frame (no photo).
-// Redrawn with a caption while the conversation plays.
-function drawChat(ctx, w, h, caption) {
+// Chat screen: Kai on a video call. Uses the deck's portrait (assets/kai.jpg) with a slow
+// zoom, scanlines and captions; falls back to a drawn silhouette until the image loads.
+const kaiImg = new Image();
+let kaiReady = false;
+kaiImg.onload = () => { kaiReady = true; };
+kaiImg.src = '/digital-twin-kit/assets/kai.jpg';
+function drawChat(ctx, w, h, caption, t = 0) {
+  if (kaiReady) {
+    const zoom = reducedMotion ? 1.04 : 1.04 + 0.035 * Math.sin(t / 1300);
+    const dw = w * zoom, dh = h * zoom;
+    ctx.drawImage(kaiImg, (w - dw) / 2, (h - dh) / 2 - 6, dw, dh);
+    const tint = ctx.createLinearGradient(0, 0, 0, h);
+    tint.addColorStop(0, 'rgba(22, 34, 42, 0.18)');
+    tint.addColorStop(1, 'rgba(22, 34, 42, 0.38)');
+    ctx.fillStyle = tint;
+    ctx.fillRect(0, 0, w, h);
+    drawChatOverlay(ctx, w, h, caption);
+    return;
+  }
   const bg = ctx.createLinearGradient(0, 0, 0, h);
   bg.addColorStop(0, '#2b3a44');
   bg.addColorStop(1, '#16222a');
@@ -283,6 +305,9 @@ function drawChat(ctx, w, h, caption) {
     ctx.arc(w * 0.5 + dx, h * 0.4, 4.5, 0, Math.PI * 2);
     ctx.fill();
   }
+  drawChatOverlay(ctx, w, h, caption);
+}
+function drawChatOverlay(ctx, w, h, caption) {
   // scanlines
   ctx.fillStyle = 'rgba(0, 0, 0, 0.12)';
   for (let y = 0; y < h; y += 4) ctx.fillRect(0, y, w, 1);
@@ -291,6 +316,17 @@ function drawChat(ctx, w, h, caption) {
   ctx.beginPath();
   ctx.arc(w - 28, 28, 8, 0, Math.PI * 2);
   ctx.fill();
+  if (caption && caption.typing) {
+    ctx.fillStyle = 'rgba(19, 19, 18, 0.82)';
+    ctx.fillRect(0, h - 96, w, 96);
+    ctx.font = '600 22px system-ui, -apple-system, "Segoe UI", sans-serif';
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = '#e8873a';
+    ctx.fillText(caption.who, 20, h - 84);
+    ctx.fillStyle = '#e9dfd8';
+    for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.arc(32 + i * 22, h - 36, 6, 0, Math.PI * 2); ctx.fill(); }
+    return;
+  }
   if (caption) {
     ctx.fillStyle = 'rgba(19, 19, 18, 0.82)';
     ctx.fillRect(0, h - 96, w, 96);
@@ -312,9 +348,11 @@ function drawChat(ctx, w, h, caption) {
   }
 }
 TEX.chat = canvasTexture(512, 352, (ctx, w, h) => drawChat(ctx, w, h, null));
-function setChatCaption(caption) {
+let chatCaption = null;
+function setChatCaption(caption, t) {
+  chatCaption = caption;
   const c = TEX.chat.image;
-  drawChat(c.getContext('2d'), c.width, c.height, caption);
+  drawChat(c.getContext('2d'), c.width, c.height, caption, t);
   TEX.chat.needsUpdate = true;
 }
 
@@ -762,6 +800,7 @@ const labelEl = document.getElementById('label');
 const labelName = document.getElementById('label-name');
 const labelLine = document.getElementById('label-line');
 const labelHint = document.getElementById('label-hint');
+const labelChoices = document.getElementById('label-choices');
 const btnApart = document.getElementById('btn-apart');
 const btnReset = document.getElementById('btn-reset');
 const btnCamera = document.getElementById('btn-camera');
@@ -990,10 +1029,15 @@ if (renderer) {
     } else if (drawing) {
       name = LABELS.notes.name; line = LABELS.notes.line; hint = UI.drawHint; anchor = 'notes';
     } else if (talk.index >= 0) {
-      const l = CONVERSATION[talk.index];
-      name = LABELS.chat.name; speaker = l.who; line = l.text;
-      hint = talk.index < CONVERSATION.length - 1 ? UI.chatNext : '';
-      anchor = 'chat';
+      name = LABELS.chat.name; anchor = 'chat';
+      if (talk.phase === 'choose') {
+        hint = UI.chatChoose;
+      } else if (chatCaption && !chatCaption.typing) {
+        speaker = chatCaption.who; line = chatCaption.text;
+        if (talk.phase === 'kai') hint = UI.chatNext;
+      } else if (chatCaption) {
+        speaker = 'Kai'; line = '…';
+      }
     } else if (selected) {
       name = LABELS[selected].name; line = LABELS[selected].line; hint = UI.swapNext; anchor = selected;
     } else if (focused) {
@@ -1015,6 +1059,16 @@ if (renderer) {
     }
     labelLine.appendChild(document.createTextNode(line));
     labelHint.textContent = hint;
+    labelChoices.textContent = '';
+    if (talk.awaiting) {
+      CONVERSATION[talk.turn].lena.forEach((text, i) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = text;
+        b.addEventListener('click', () => talk.choose(i));
+        labelChoices.appendChild(b);
+      });
+    }
     placeLabel(anchor);
     labelEl.hidden = false;
   }
@@ -1040,26 +1094,42 @@ if (renderer) {
   // -------------------------------------------------------------------------
   // Interaction 4: talk to Kai. Tap the Chat screen; lines play one at a time.
   // -------------------------------------------------------------------------
-  const LINE_MS = 3000;
+  // The visitor picks Lena's line each turn; Kai answers. Phases: choose, lena, typing, kai.
   const talk = {
-    index: -1,
+    turn: -1,
+    phase: 'idle',
     timer: 0,
-    show(i) {
+    get index() { return this.turn; },
+    get awaiting() { return this.phase === 'choose'; },
+    set(phase, caption, nextMs, next) {
       clearTimeout(this.timer);
-      this.index = i;
-      if (i >= CONVERSATION.length) {
-        this.index = -1;
-        setChatCaption(null);
-      } else {
-        setChatCaption(CONVERSATION[i]);
-        this.timer = setTimeout(() => this.show(i + 1), LINE_MS);
-      }
+      this.phase = phase;
+      setChatCaption(caption, performance.now());
       needsRender = true;
       renderLabel();
+      if (next) this.timer = setTimeout(next, reducedMotion ? Math.min(nextMs, 900) : nextMs);
     },
-    start() { this.show(0); },
-    advance() { this.show(this.index + 1); },
-    stop() { clearTimeout(this.timer); if (this.index >= 0) this.show(CONVERSATION.length); },
+    start() { this.turn = 0; this.set('choose', null); },
+    choose(i) {
+      if (this.phase !== 'choose') return;
+      const t = CONVERSATION[this.turn];
+      this.reply = t.kai[i];
+      this.set('lena', { who: 'Lena', text: t.lena[i] }, 1500, () =>
+        this.set('typing', { who: 'Kai', typing: true }, 900, () => this.showKai()));
+    },
+    showKai() {
+      this.set('kai', { who: 'Kai', text: this.reply }, 3200, () => this.next());
+    },
+    next() {
+      if (this.turn + 1 < CONVERSATION.length) { this.turn += 1; this.set('choose', null); }
+      else this.stop();
+    },
+    advance() {
+      // A tap on the screen skips the wait.
+      if (this.phase === 'lena' || this.phase === 'typing') this.showKai();
+      else if (this.phase === 'kai') this.next();
+    },
+    stop() { clearTimeout(this.timer); this.turn = -1; this.phase = 'idle'; setChatCaption(null); needsRender = true; renderLabel(); },
   };
 
   // -------------------------------------------------------------------------
@@ -1500,9 +1570,15 @@ if (renderer) {
   const playLight = parts.sound.group.userData.playLight;
   playLight.emissive.set(C.aqua);
   playLight.emissiveIntensity = 0;
+  let chatDrawnAt = 0;
   function tick(now) {
     const animating = updateTweens(now);
     const moved = controls.update();
+    if (mode === 'kit' && !reducedMotion && kaiReady && (focused === 'chat' || talk.index >= 0) && now - chatDrawnAt > 80) {
+      chatDrawnAt = now;
+      setChatCaption(chatCaption, now);
+      needsRender = true;
+    }
     if (listening) {
       playLight.emissiveIntensity = 0.35 + 0.35 * Math.sin(now / 160);
       needsRender = true;
