@@ -285,7 +285,7 @@ TEX.notes = canvasTexture(512, 464, drawNotes);
 // zoom, scanlines and captions; falls back to a drawn silhouette until the image loads.
 const kaiImg = new Image();
 let kaiReady = false;
-kaiImg.onload = () => { kaiReady = true; };
+kaiImg.onload = () => { kaiReady = true; setChatCaption(chatCaption); if (window.kit) window.kit.requestRender(); };
 kaiImg.src = '/digital-twin-kit/assets/kai.jpg';
 function drawChat(ctx, w, h, caption, t = 0) {
   if (kaiReady) {
