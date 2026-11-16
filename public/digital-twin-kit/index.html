@@ -9,7 +9,7 @@
   <!-- Absolute paths, so the page works at both /digital-twin-kit and /digital-twin-kit/ -->
   <link rel="stylesheet" href="/digital-twin-kit/assets/style.css">
 </head>
-<body>
+<body data-mode="kit">
   <header class="top">
     <!-- Product names from the deck "OceanX KAI Kit Orientation" -->
     <p class="brand">OCEANX</p>
@@ -34,12 +34,36 @@
       <p id="label-line"></p>
       <p id="label-hint" class="hint"></p>
     </aside>
+
+    <!-- Camera point of view (v2). Shown only in pov mode. Frame marks, REC dot and the orange wake light
+         are drawn here in HTML; the wrapper and bins are 3D. Strings are LLM-written (see app.js UI). -->
+    <div id="viewfinder" class="viewfinder" aria-live="polite">
+      <div class="vf-dim"></div>
+      <span class="vf-corner tl"></span><span class="vf-corner tr"></span>
+      <span class="vf-corner bl"></span><span class="vf-corner br"></span>
+      <span class="vf-light" aria-hidden="true"></span>
+      <span class="vf-rec" aria-hidden="true"></span>
+      <p id="vf-hint" class="vf-hint"></p>
+      <div id="reaction" class="reaction" hidden>
+        <p id="reaction-text"></p>
+        <div class="reaction-actions">
+          <!-- LLM-written: button labels -->
+          <button type="button" id="btn-again">Try again</button>
+          <button type="button" id="btn-back-reaction">Back to the kit</button>
+        </div>
+      </div>
+    </div>
   </main>
 
   <nav id="bar" class="bar" aria-label="Kit controls">
-    <!-- LLM-written: button labels. Swapping needs no button: while apart, tap a module, then tap another. -->
-    <button type="button" id="btn-apart" disabled>Take apart</button>
-    <button type="button" id="btn-reset" disabled>Reset view</button>
+    <!-- LLM-written: button labels. Which buttons show depends on body[data-mode] (kit, camera, pov).
+         Swapping needs no button: while apart, tap a module, then tap another. -->
+    <button type="button" id="btn-back" data-modes="camera pov">Back to the kit</button>
+    <button type="button" id="btn-apart" data-modes="kit" disabled>Take apart</button>
+    <button type="button" id="btn-reset" data-modes="kit camera" disabled>Reset view</button>
+    <span class="gap" data-modes="kit camera" aria-hidden="true"></span>
+    <button type="button" id="btn-camera" class="accent" data-modes="kit" disabled>See the camera</button>
+    <button type="button" id="btn-try" class="accent" data-modes="camera">Try the camera</button>
   </nav>
 
   <!-- Interaction 5, "Listen". Humpback whale calls recorded underwater in Bartlett Cove, Glacier Bay,
