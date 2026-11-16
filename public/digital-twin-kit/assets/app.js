@@ -33,6 +33,14 @@ export const CONVERSATION = [
 // Deck, Modules slide.
 export const MODULES_CONTEXT = 'Four modules click together into one device. Children add or swap modules as they grow. The housing is made from recovered ocean plastic.';
 
+// Sound module clips, in button order. All National Park Service recordings from Glacier Bay,
+// public domain (US federal government work); sources in index.html. Names are LLM-written.
+export const SOUNDS = [
+  { key: 'humpback', name: 'Humpback whales', file: '/digital-twin-kit/assets/humpback-glacier-bay.mp3' },
+  { key: 'orca',     name: 'Killer whales',   file: '/digital-twin-kit/assets/killer-whales-glacier-bay.mp3' },
+  { key: 'seals',    name: 'Harbor seals',    file: '/digital-twin-kit/assets/harbor-seals-glacier-bay.mp3' },
+];
+
 // LLM-written UI strings, for the team to review.
 const UI = {
   modulesTitle: 'Modules',
@@ -42,6 +50,7 @@ const UI = {
   chatNext: 'Tap the screen for the next line.',
   soundHint: 'Tap the speaker to listen.',
   soundStop: 'Tap the speaker to stop.',
+  soundStep: 'Orange and green change the sound.',
   // v2 camera screen. Button labels live in index.html.
   povHint: 'Tap the bin where the wrapper goes.',
   binPlastic: 'Plastic',
@@ -571,18 +580,18 @@ function soundModule() {
   g.add(grille);
   g.userData.grille = grille;
 
-  // Four round buttons: orange, green, white, white.
-  const buttonColors = [M.orange, M.green, M.white, M.white];
-  buttonColors.forEach((m, i) => {
+  // Four round buttons: orange = up (previous sound), green = down (next sound), whites = play/stop.
+  const buttons = [[M.orange, 'up'], [M.green, 'down'], [M.white, 'speaker'], [M.white, 'speaker']];
+  buttons.forEach(([m, hit], i) => {
     const y = 0.2 - i * 0.12;
     const recess = cylinder(0.036, 0.01, M.creamDark, 28);
     at(recess, 0.16, y, FRONT - 0.003);
     g.add(recess);
     const b = cylinder(0.03, 0.03, m.clone(), 28);
     at(b, 0.16, y, FRONT + 0.01);
-    b.userData.hit = 'speaker';
+    b.userData.hit = hit;
     g.add(b);
-    if (i === 0) g.userData.playLight = b.material; // orange button pulses while playing
+    if (i === 2) g.userData.playLight = b.material; // first white button pulses while playing
   });
   // Green vertical slider.
   g.add(at(box(0.04, 0.38, 0.03, M.green, 0.018), 0.255, 0.02, FRONT + 0.01));
@@ -981,7 +990,7 @@ if (renderer) {
       name = LABELS[focused].name; line = LABELS[focused].line; anchor = focused;
       if (apart && focused !== 'camera') hint = UI.swapHint;
       else if (focused === 'chat') hint = UI.chatHint;
-      else if (focused === 'sound') hint = listening ? UI.soundStop : UI.soundHint;
+      else if (focused === 'sound') hint = `${soundIndex + 1}/${SOUNDS.length} ${SOUNDS[soundIndex].name}. ${listening ? UI.soundStop : UI.soundHint} ${UI.soundStep}`;
     } else if (apart) {
       name = UI.modulesTitle; line = MODULES_CONTEXT; hint = UI.swapHint;
     }
@@ -1048,6 +1057,21 @@ if (renderer) {
   // -------------------------------------------------------------------------
   const ocean = document.getElementById('ocean');
   let listening = false;
+  let soundIndex = 0;
+  ocean.src = SOUNDS[soundIndex].file;
+  // Orange and green buttons step through the list; keeps playing if a clip was playing.
+  function stepSound(dir) {
+    soundIndex = (soundIndex + dir + SOUNDS.length) % SOUNDS.length;
+    const wasListening = listening;
+    ocean.pause();
+    ocean.src = SOUNDS[soundIndex].file;
+    ocean.currentTime = 0;
+    if (wasListening) {
+      const p = ocean.play();
+      if (p && p.catch) p.catch(() => { listening = false; playLightOff(); renderLabel(); });
+    }
+    renderLabel();
+  }
   function stopListening() {
     listening = false;
     ocean.pause();
@@ -1156,6 +1180,8 @@ if (renderer) {
       if (talk.index >= 0) talk.advance(); else talk.start();
     } else if (part === 'sound' && area === 'speaker' && (isMouse || wasFocused)) {
       toggleListen();
+    } else if (part === 'sound' && (area === 'up' || area === 'down') && (isMouse || wasFocused)) {
+      stepSound(area === 'up' ? -1 : 1);
     }
   }
 
@@ -1375,7 +1401,7 @@ if (renderer) {
   controls.addEventListener('change', () => { needsRender = true; });
 
   const playLight = parts.sound.group.userData.playLight;
-  playLight.emissive.set(C.orange);
+  playLight.emissive.set(C.aqua);
   playLight.emissiveIntensity = 0;
   function tick(now) {
     const animating = updateTweens(now);
@@ -1403,6 +1429,6 @@ if (renderer) {
   window.kit = {
     THREE, scene, camera, renderer, controls, world, device, cam, parts, LABELS, reducedMotion, povScene, povCamera, pov,
     get mode() { return mode; }, setMode,
-    setFocus, setApart, resetView, talk, toggleListen, selectForSwap, swapModules, requestRender: () => { needsRender = true; },
+    setFocus, setApart, resetView, talk, toggleListen, stepSound, get soundIndex() { return soundIndex; }, selectForSwap, swapModules, requestRender: () => { needsRender = true; },
   };
 }
