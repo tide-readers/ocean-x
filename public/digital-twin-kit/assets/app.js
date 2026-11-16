@@ -46,6 +46,37 @@ export const SOUNDS = [
   { key: 'seals',    name: 'Harbor seals',    file: '/digital-twin-kit/assets/harbor-seals-glacier-bay.mp3' },
 ];
 
+// Map module ("Radar") readouts. There is no public live feed for OceanXplorer: the oceanx.org
+// position box calls a private function on their site, and commercial AIS feeds need paid keys and
+// a server, which this project rules out. So the screen replays real, documented moments of the
+// ship and its vehicles, in order, with the date shown. `approx` marks coordinates taken from the
+// described location rather than a published fix. For dives, depth is the documented dive depth;
+// for the 2025 legs it is the seabed depth at the waypoint from GEBCO 2020 (api.opentopodata.org,
+// queried 16 Nov 2026). Place names are LLM-written.
+export const RADAR_POINTS = [
+  // Will Smith's dive in National Geographic's "Welcome to Earth" ("Descent into Darkness", 2021):
+  // about 1,000 m (3,300 ft) in a Triton submersible along the shelf edge east of the Bahamas.
+  // https://www.nationalgeographic.com/culture/article/how-a-global-odyssey-gave-will-smith-a-real-welcome-to-earth
+  { place: 'Shelf edge, Bahamas', when: '2021', lat: 24.7, lon: -77.4, depth: 1000, approx: true },
+  // NEOM brine pools, Gulf of Aqaba, found by ROV from OceanXplorer in 2020 at 1,770 m.
+  // https://www.nature.com/articles/s43247-022-00482-x
+  { place: 'Gulf of Aqaba, Red Sea', when: '2020', lat: 28.1, lon: 34.65, depth: 1770, approx: true },
+  // Seychelles 2024: ROV Chimaera to 4,603 m in the Amirantes Trench.
+  // https://www.oceanx.org/missions/seychelles-2024 and https://nation.sc/articles/21066/archive
+  { place: 'Amirantes Trench, Seychelles', when: 'Jan 2024', lat: -6.0, lon: 53.5, depth: 4603, approx: true },
+  // Indonesia 2024: deep-sea coral reefs; a 4,800 m dive reported by Indonesian officials.
+  // https://indonesia.go.id/kategori/culture/8385/indonesia-s-ocean-exploration-mission?lang=2
+  { place: 'Indonesia (reported)', when: 'Jul 2024', lat: -9.5, lon: 109.5, depth: 4800, approx: true },
+  // Around Africa 2025, NASA/OceanX campaign: one waypoint per dated leg in SeaBASS OCEANX_2025,
+  // https://seabass.gsfc.nasa.gov/experiment/OCEANX_2025/ (cruise pages OXR20250108 .. OXR20250403).
+  { place: 'Seychelles plateau', when: '8–17 Jan 2025', lat: -5.2, lon: 56.0, depth: 54 },
+  { place: 'Mozambique Channel', when: '18–26 Jan 2025', lat: -10.5, lon: 44.5, depth: 3519 },
+  { place: 'Off the Cape', when: '31 Jan–20 Feb 2025', lat: -35.5, lon: 20.0, depth: 161 },
+  { place: 'Gulf of Guinea', when: '1–22 Mar 2025', lat: -10.0, lon: -2.0, depth: 4871 },
+  { place: 'Equatorial Atlantic', when: '7–23 Mar 2025', lat: 0.5, lon: -10.0, depth: 4729 },
+  { place: 'Off Cabo Verde', when: '3–5 Apr 2025', lat: 18.5, lon: -24.0, depth: 3797 },
+];
+
 // LLM-written UI strings, for the team to review.
 const UI = {
   modulesTitle: 'Modules',
@@ -58,6 +89,7 @@ const UI = {
   soundStop: 'Tap the speaker to stop.',
   soundStep: 'Orange and green change the sound.',
   drawHint: 'Draw on the screen. The down arrow clears it. Tap the pen to put it back.',
+  mapHint: 'Real OceanX dives and positions, replayed.',
   // v2 camera screen. Button labels live in index.html.
   povHint: 'Tap the bin where the wrapper goes.',
   binPlastic: 'Plastic',
@@ -356,8 +388,9 @@ function setChatCaption(caption, t) {
   TEX.chat.needsUpdate = true;
 }
 
-// Map screen. Gold contour map with a turtle, following kit-reference.jpg.
-TEX.map = canvasTexture(512, 420, (ctx, w, h) => {
+// Map screen. Gold contour map with a turtle, following kit-reference.jpg. The static part is
+// drawn once; the readouts are redrawn on top as the replay runs (see drawMapReadout).
+function drawMapBase(ctx, w, h) {
   ctx.fillStyle = '#0f120f';
   ctx.fillRect(0, 0, w, h);
   ctx.strokeStyle = 'rgba(217, 168, 58, 0.18)';
@@ -404,16 +437,72 @@ TEX.map = canvasTexture(512, 420, (ctx, w, h) => {
     ctx.stroke();
   }
   ctx.restore();
-  // readouts, approximated from the render
-  ctx.fillStyle = '#e6b94a';
-  ctx.font = '16px ui-monospace, Menlo, Consolas, monospace';
-  ctx.textBaseline = 'top';
-  ['LAT 16.71° N', 'LON 60.01° W', 'DEP 0.57 m'].forEach((t, i) => ctx.fillText(t, 18, 16 + i * 22));
   for (let i = 0; i < 4; i++) {
     ctx.fillStyle = i < 3 ? '#e6b94a' : 'rgba(230, 185, 74, 0.3)';
     ctx.fillRect(18 + i * 18, h - 30, 13, 13);
   }
-});
+}
+const mapBase = document.createElement('canvas');
+mapBase.width = 512; mapBase.height = 420;
+drawMapBase(mapBase.getContext('2d'), mapBase.width, mapBase.height);
+TEX.map = canvasTexture(512, 420, (ctx) => ctx.drawImage(mapBase, 0, 0));
+
+function fmtCoord(v, pos, neg) {
+  return Math.abs(v).toFixed(2) + '\u00b0 ' + (v >= 0 ? pos : neg);
+}
+function drawMapReadout(r) {
+  const c = TEX.map.image;
+  const ctx = c.getContext('2d');
+  const w = c.width, h = c.height;
+  ctx.drawImage(mapBase, 0, 0);
+  ctx.fillStyle = 'rgba(15, 18, 15, 0.7)';
+  ctx.fillRect(10, 10, 190, 76);
+  ctx.fillStyle = '#e6b94a';
+  ctx.font = '16px ui-monospace, Menlo, Consolas, monospace';
+  ctx.textBaseline = 'top';
+  ctx.textAlign = 'left';
+  ['LAT ' + fmtCoord(r.lat, 'N', 'S'), 'LON ' + fmtCoord(r.lon, 'E', 'W'), 'DEP ' + Math.round(r.dep) + ' m']
+    .forEach((t, i) => ctx.fillText(t, 18, 16 + i * 22));
+  ctx.textAlign = 'right';
+  ctx.font = '600 14px system-ui, -apple-system, "Segoe UI", sans-serif';
+  const line = (r.point.approx ? '~ ' : '') + r.point.place;
+  const wl = Math.max(ctx.measureText(line).width, ctx.measureText(r.point.when).width) + 20;
+  ctx.fillStyle = 'rgba(15, 18, 15, 0.7)';
+  ctx.fillRect(w - 18 - wl, h - 54, wl, 42);
+  ctx.fillStyle = '#e6b94a';
+  ctx.fillText(line, w - 28, h - 50);
+  ctx.font = '13px ui-monospace, Menlo, Consolas, monospace';
+  ctx.fillText(r.point.when, w - 28, h - 32);
+  ctx.textAlign = 'left';
+  TEX.map.needsUpdate = true;
+}
+
+// Where the replay is at a given time: travel between points, then the dive at each one.
+const RADAR = { travel: 20000, down: 6000, hold: 6000, up: 3000, t0: performance.now() };
+function radarState(now) {
+  const legMs = RADAR.travel + RADAR.down + RADAR.hold + RADAR.up;
+  const n = RADAR_POINTS.length;
+  const cycle = legMs * n;
+  // Frame timestamps can precede t0 on the first frame; keep the modulo positive.
+  const total = (((now - RADAR.t0) % cycle) + cycle) % cycle;
+  const i = Math.floor(total / legMs);
+  const u = total - i * legMs;
+  const from = RADAR_POINTS[(i - 1 + n) % n];
+  const to = RADAR_POINTS[i];
+  let lat = to.lat, lon = to.lon, dep = 0;
+  if (u < RADAR.travel) {
+    const k = ease.inOutCubic(u / RADAR.travel);
+    lat = from.lat + (to.lat - from.lat) * k;
+    lon = from.lon + (to.lon - from.lon) * k;
+  } else if (u < RADAR.travel + RADAR.down) {
+    dep = to.depth * ease.inOutCubic((u - RADAR.travel) / RADAR.down);
+  } else if (u < RADAR.travel + RADAR.down + RADAR.hold) {
+    dep = to.depth;
+  } else {
+    dep = to.depth * (1 - ease.inOutCubic((u - RADAR.travel - RADAR.down - RADAR.hold) / RADAR.up));
+  }
+  return { lat, lon, dep, point: to, moving: u < RADAR.travel };
+}
 
 // Sound module speaker grille: dark disc with cream slot bars.
 TEX.grille = canvasTexture(256, 256, (ctx, w, h) => {
@@ -1044,6 +1133,7 @@ if (renderer) {
       name = LABELS[focused].name; line = LABELS[focused].line; anchor = focused;
       if (apart && focused !== 'camera') hint = UI.swapHint;
       else if (focused === 'chat') hint = UI.chatHint;
+      else if (focused === 'map') hint = UI.mapHint;
       else if (focused === 'sound') hint = `${soundIndex + 1}/${SOUNDS.length} ${SOUNDS[soundIndex].name}. ${listening ? UI.soundStop : UI.soundHint} ${UI.soundStep}`;
     } else if (apart) {
       name = UI.modulesTitle; line = MODULES_CONTEXT; hint = UI.swapHint;
@@ -1571,9 +1661,15 @@ if (renderer) {
   playLight.emissive.set(C.aqua);
   playLight.emissiveIntensity = 0;
   let chatDrawnAt = 0;
+  let mapDrawnAt = 0;
   function tick(now) {
     const animating = updateTweens(now);
     const moved = controls.update();
+    if (mode === 'kit' && now - mapDrawnAt > 200) {
+      mapDrawnAt = now;
+      drawMapReadout(radarState(now));
+      needsRender = true;
+    }
     if (mode === 'kit' && !reducedMotion && kaiReady && (focused === 'chat' || talk.index >= 0) && now - chatDrawnAt > 80) {
       chatDrawnAt = now;
       setChatCaption(chatCaption, now);
@@ -1601,7 +1697,7 @@ if (renderer) {
   // Exposed for the next steps and for poking at in the console.
   window.kit = {
     THREE, scene, camera, renderer, controls, world, device, cam, parts, LABELS, reducedMotion, povScene, povCamera, pov,
-    get mode() { return mode; }, setMode,
+    get mode() { return mode; }, setMode, radarState, RADAR_POINTS,
     setFocus, setApart, resetView, talk, toggleListen, stepSound, setDrawing, clearInk, get drawing() { return drawing; }, get soundIndex() { return soundIndex; }, selectForSwap, swapModules, requestRender: () => { needsRender = true; },
   };
 }
