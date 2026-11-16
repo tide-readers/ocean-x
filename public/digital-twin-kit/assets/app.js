@@ -51,6 +51,7 @@ const UI = {
   soundHint: 'Tap the speaker to listen.',
   soundStop: 'Tap the speaker to stop.',
   soundStep: 'Orange and green change the sound.',
+  drawHint: 'Draw on the screen. The down arrow clears it. Tap the pen to put it back.',
   // v2 camera screen. Button labels live in index.html.
   povHint: 'Tap the bin where the wrapper goes.',
   binPlastic: 'Plastic',
@@ -205,7 +206,8 @@ function decal(w, h, texture, z = FRONT + 0.0015) {
 const TEX = {};
 
 // Notes screen. Content follows kit-reference.jpg (code-style notes).
-TEX.notes = canvasTexture(512, 464, (ctx, w, h) => {
+// Kept as a named function so the screen can be redrawn to clear the visitor's ink.
+function drawNotes(ctx, w, h) {
   ctx.fillStyle = '#141614';
   ctx.fillRect(0, 0, w, h);
   const lines = [
@@ -238,7 +240,8 @@ TEX.notes = canvasTexture(512, 464, (ctx, w, h) => {
       x += ctx.measureText(text).width;
     }
   });
-});
+}
+TEX.notes = canvasTexture(512, 464, drawNotes);
 
 // Chat screen. Kai's face area, drawn as a soft video-call frame (no photo).
 // Redrawn with a caption while the conversation plays.
@@ -489,7 +492,9 @@ function notesModule() {
   g.name = 'notes';
   g.add(screen(0.44, 0.40, TEX.notes));
   g.add(at(decal(0.07, 0.07, TEX.arrowUp), 0, 0.265, FRONT + 0.0015));
-  g.add(at(decal(0.07, 0.07, TEX.arrowDown), 0, -0.265, FRONT + 0.0015));
+  const arrowDown = at(decal(0.07, 0.07, TEX.arrowDown), 0, -0.265, FRONT + 0.0015);
+  arrowDown.userData.hit = 'clear'; // clears the visitor's ink while drawing
+  g.add(arrowDown);
 
   // Stylus clipped to the left side: silver body, yellow cap and clip.
   const stylus = new THREE.Group();
@@ -509,7 +514,9 @@ function notesModule() {
   clip.position.set(0.028, 0.2, 0);
   stylus.add(clip);
   stylus.position.set(-MOD.w / 2 - 0.028, 0.03, 0.08);
+  stylus.traverse((o) => { o.userData.hit = 'pen'; });
   g.add(stylus);
+  g.userData.stylus = stylus;
   return g;
 }
 
@@ -891,7 +898,7 @@ if (renderer) {
   function resetView() {
     controls.enabled = false;
     tween(camera.position, { x: home.position.x, y: home.position.y, z: home.position.z }, 550, ease.inOutCubic);
-    tween(controls.target, { x: home.target.x, y: home.target.y, z: home.target.z }, 550, ease.inOutCubic, 0, () => { controls.enabled = true; });
+    tween(controls.target, { x: home.target.x, y: home.target.y, z: home.target.z }, 550, ease.inOutCubic, 0, () => { controls.enabled = !drawing; });
   }
   btnReset.disabled = false;
   btnReset.addEventListener('click', resetView);
@@ -903,6 +910,7 @@ if (renderer) {
   const APART = { x: 0.26, y: 0.17, z: 0.08 };
   let apart = false;
   function setApart(next) {
+    if (drawing) setDrawing(false);
     apart = next;
     const holders = device.userData.holders;
     const slots = device.userData.slots;
@@ -979,6 +987,8 @@ if (renderer) {
     if (mode === 'pov') { labelEl.hidden = true; return; }
     if (mode === 'camera') {
       name = LABELS.camera.name; line = LABELS.camera.line; anchor = 'camera';
+    } else if (drawing) {
+      name = LABELS.notes.name; line = LABELS.notes.line; hint = UI.drawHint; anchor = 'notes';
     } else if (talk.index >= 0) {
       const l = CONVERSATION[talk.index];
       name = LABELS.chat.name; speaker = l.who; line = l.text;
@@ -1127,13 +1137,93 @@ if (renderer) {
     renderLabel();
   }
 
+  // -------------------------------------------------------------------------
+  // v3: draw on the Notes screen. Tap the pen to pick it up; drag on the screen to draw.
+  // -------------------------------------------------------------------------
+  let drawing = false;
+  let stroke = null;
+  const stylus = parts.notes.group.userData.stylus;
+  const stylusHome = stylus.position.clone();
+  let notesPlane = null;
+  parts.notes.group.traverse((o) => { if (!notesPlane && o.userData.hit === 'screen') notesPlane = o; });
+  const notesCanvas = TEX.notes.image;
+  const notesCtx = notesCanvas.getContext('2d');
+  const notesCenter = new THREE.Vector3();
+
+  function setDrawing(next) {
+    if (next === drawing) return;
+    drawing = next;
+    stroke = null;
+    if (drawing) {
+      tween(stylus.position, { x: stylusHome.x + 0.06, y: stylusHome.y + 0.05, z: stylusHome.z + 0.16 }, 350, ease.outBack);
+      tween(stylus.rotation, { x: 0.35, z: -0.4 }, 350);
+      controls.enabled = false;
+      setFocus('notes');
+      // Move in on the Notes module so there is room to draw.
+      parts.notes.group.getWorldPosition(notesCenter);
+      const pos = notesCenter.clone().add(camera.position.clone().sub(notesCenter).multiplyScalar(0.55));
+      tween(camera.position, { x: pos.x, y: pos.y, z: pos.z }, 500, ease.inOutCubic);
+      tween(controls.target, { x: notesCenter.x, y: notesCenter.y, z: notesCenter.z }, 500, ease.inOutCubic);
+    } else {
+      tween(stylus.position, { x: stylusHome.x, y: stylusHome.y, z: stylusHome.z }, 350, ease.outCubic);
+      tween(stylus.rotation, { x: 0, z: 0 }, 350);
+      resetView(); // re-enables the controls when it lands
+    }
+    renderLabel();
+  }
+
+  function screenUV(clientX, clientY) {
+    const r = canvasEl.getBoundingClientRect();
+    pointer.set(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
+    raycaster.setFromCamera(pointer, camera);
+    const hit = raycaster.intersectObject(notesPlane, false)[0];
+    return hit && hit.uv ? hit.uv : null;
+  }
+
+  function inkTo(uv, begin) {
+    const x = uv.x * notesCanvas.width;
+    const y = (1 - uv.y) * notesCanvas.height;
+    if (begin) {
+      notesCtx.beginPath();
+      notesCtx.moveTo(x, y);
+      notesCtx.lineTo(x + 0.01, y);
+    } else {
+      notesCtx.lineTo(x, y);
+    }
+    notesCtx.strokeStyle = '#9FE6D2';
+    notesCtx.lineWidth = 6;
+    notesCtx.lineCap = 'round';
+    notesCtx.lineJoin = 'round';
+    notesCtx.stroke();
+    notesCtx.beginPath();
+    notesCtx.moveTo(x, y);
+    TEX.notes.needsUpdate = true;
+    needsRender = true;
+  }
+
+  function clearInk() {
+    drawNotes(notesCtx, notesCanvas.width, notesCanvas.height);
+    TEX.notes.needsUpdate = true;
+    needsRender = true;
+  }
+
   // Pointer handling: hover for mouse, tap for touch and pen. Drags go to OrbitControls.
   let down = null;
   let lastTap = 0;
   canvasEl.addEventListener('pointerdown', (e) => {
+    if (drawing && mode === 'kit') {
+      const uv = screenUV(e.clientX, e.clientY);
+      if (uv) { stroke = true; inkTo(uv, true); down = null; return; }
+    }
     down = { x: e.clientX, y: e.clientY, t: performance.now(), type: e.pointerType };
   });
   canvasEl.addEventListener('pointermove', (e) => {
+    if (stroke && e.buttons) {
+      const uv = screenUV(e.clientX, e.clientY);
+      if (uv) inkTo(uv, false);
+      return;
+    }
+    if (drawing) return; // no hover changes while the pen is out
     if (e.pointerType !== 'mouse' || e.buttons) return;
     const hit = partAt(e.clientX, e.clientY);
     if (mode === 'pov') pov.hover(hit.bin); else setFocus(hit.part);
@@ -1143,6 +1233,7 @@ if (renderer) {
     if (mode === 'pov') pov.hover(null); else if (!selected) setFocus(null);
   });
   canvasEl.addEventListener('pointerup', (e) => {
+    stroke = null;
     if (!down) return;
     const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
     const held = performance.now() - down.t;
@@ -1159,7 +1250,7 @@ if (renderer) {
     lastTap = now;
     tap(hit, e.pointerType === 'mouse');
   });
-  canvasEl.addEventListener('pointercancel', () => { down = null; });
+  canvasEl.addEventListener('pointercancel', () => { down = null; stroke = null; });
 
   function tap({ part, area, bin }, isMouse) {
     if (mode === 'pov') { if (bin) pov.throwInto(bin); return; }
@@ -1167,7 +1258,13 @@ if (renderer) {
     const wasFocused = focused === part;
     setFocus(part);
     if (mode === 'camera') return;
+    if (drawing) {
+      if (part === 'notes' && area === 'pen') setDrawing(false);
+      else if (part === 'notes' && area === 'clear') clearInk();
+      return;
+    }
     if (!part) { selectForSwap(null); return; }
+    if (!apart && part === 'notes' && area === 'pen' && (isMouse || wasFocused)) { setDrawing(true); return; }
 
     if (apart) {
       if (part === 'camera') return;
@@ -1362,7 +1459,7 @@ if (renderer) {
 
   function setMode(next) {
     if (next === mode) return;
-    if (mode === 'kit') { talk.stop(); if (listening) stopListening(); selectForSwap(null); }
+    if (mode === 'kit') { talk.stop(); if (listening) stopListening(); selectForSwap(null); if (drawing) setDrawing(false); }
     if (mode === 'pov') pov.leave();
     setFocus(null);
     mode = next;
@@ -1429,6 +1526,6 @@ if (renderer) {
   window.kit = {
     THREE, scene, camera, renderer, controls, world, device, cam, parts, LABELS, reducedMotion, povScene, povCamera, pov,
     get mode() { return mode; }, setMode,
-    setFocus, setApart, resetView, talk, toggleListen, stepSound, get soundIndex() { return soundIndex; }, selectForSwap, swapModules, requestRender: () => { needsRender = true; },
+    setFocus, setApart, resetView, talk, toggleListen, stepSound, setDrawing, clearInk, get drawing() { return drawing; }, get soundIndex() { return soundIndex; }, selectForSwap, swapModules, requestRender: () => { needsRender = true; },
   };
 }
