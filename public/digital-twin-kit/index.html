@@ -66,12 +66,18 @@
     <button type="button" id="btn-try" class="accent" data-modes="camera">Try the camera</button>
   </nav>
 
-  <!-- Interaction 5, "Listen". Humpback whale calls recorded underwater in Bartlett Cove, Glacier Bay,
-       by the National Park Service ("Humpback whale moo etc", 25 Sep 2001), trimmed to 16 s and
-       normalised. Source: https://home.nps.gov/glba/learn/nature/soundclips.htm
-       License: US federal government work, public domain. An <audio> element so the iPhone silent
-       switch does not mute it the way it can mute Web Audio. -->
-  <audio id="ocean" preload="none" src="/digital-twin-kit/assets/humpback-glacier-bay.mp3"></audio>
+  <!-- Interaction 5, "Listen". Three underwater recordings by the National Park Service, Glacier Bay,
+       each trimmed to 16 s and normalised. License: US federal government works, public domain.
+       1. humpback-glacier-bay.mp3: "Humpback whale moo etc", Bartlett Cove, 25 Sep 2001.
+          https://home.nps.gov/glba/learn/nature/soundclips.htm
+       2. killer-whales-glacier-bay.mp3: "Resident Killer Whale Vocalizations", NPS / C. Gabriele.
+          https://www.nps.gov/nps-audiovideo/audiovideo/e60488c2-30fb-414b-bc9f-ee16f886a897.mp3
+          (linked from the page above)
+       3. harbor-seals-glacier-bay.mp3: "humpbacks and harbor seals in quiet 2020", 7 Aug 2020.
+          https://home.nps.gov/glba/learn/nature/upload/HASE_in_quiet_2020Aug07_1631-2.mp3
+       The src is set from the SOUNDS list in app.js. An <audio> element so the iPhone silent switch
+       does not mute it the way it can mute Web Audio. -->
+  <audio id="ocean" preload="none"></audio>
 
   <script>
     // If the module script never reports in (old browser, blocked WebGL), show the fallback.
