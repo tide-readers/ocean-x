@@ -136,6 +136,19 @@ body {
   line-height: 1.4;
 }
 
+.label h2:empty, .label p:empty { display: none; }
+
+.label .hint {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--orange);
+}
+
+.label .speaker {
+  color: var(--ink);
+  font-weight: 600;
+}
+
 .bar {
   display: flex;
   gap: 8px;

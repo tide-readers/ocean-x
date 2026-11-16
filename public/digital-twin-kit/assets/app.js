@@ -1,5 +1,5 @@
 // Digital twin kit, v1. Step 1: page shell and static model. Step 2: turn it,
-// take it apart, point at a part.
+// take it apart, point at a part. Step 3: talk to Kai, listen, swap modules.
 // Three.js r170, vendored in assets/vendor/three (MIT, see LICENSE there).
 // The model is built from primitives. Each module is its own Group so later
 // steps can lift, pull apart and swap them.
@@ -19,6 +19,28 @@ export const LABELS = {
   map:    { name: 'Map',    line: "Your class's patch of ocean." },
   sound:  { name: 'Sound',  line: 'Live sound from the deep.' },
   camera: { name: 'Camera', line: 'It only wakes up for the ocean.' },
+};
+
+// Deck, "07:35 · Chat module" slide.
+export const CONVERSATION = [
+  { who: 'Lena', text: 'Why are you so tired?' },
+  { who: 'Kai',  text: 'Big haul today. Lots of wrappers like yours.' },
+  { who: 'Lena', text: 'What can I do?' },
+  { who: 'Kai',  text: "Try the lunchbox tomorrow. I'll show you the net after." },
+];
+
+// Deck, Modules slide.
+export const MODULES_CONTEXT = 'Four modules click together into one device. Children add or swap modules as they grow. The housing is made from recovered ocean plastic.';
+
+// LLM-written UI strings, for the team to review.
+const UI = {
+  modulesTitle: 'Modules',
+  swapHint: 'Tap a module, then tap another to swap them.',
+  swapNext: 'Now tap the module to swap it with.',
+  chatHint: 'Tap the screen to talk to Kai.',
+  chatNext: 'Tap the screen for the next line.',
+  soundHint: 'Tap the speaker to listen.',
+  soundStop: 'Tap the speaker to stop.',
 };
 
 // ---------------------------------------------------------------------------
@@ -132,6 +154,7 @@ function screen(w, h, texture, bezel = 0.025) {
   });
   const plane = new THREE.Mesh(new THREE.PlaneGeometry(w, h), material);
   plane.position.z = FRONT + 0.0085;
+  plane.userData.hit = 'screen';
   g.add(plane);
   g.userData.screenMaterial = material;
   return g;
@@ -202,7 +225,8 @@ TEX.notes = canvasTexture(512, 464, (ctx, w, h) => {
 });
 
 // Chat screen. Kai's face area, drawn as a soft video-call frame (no photo).
-TEX.chat = canvasTexture(512, 352, (ctx, w, h) => {
+// Redrawn with a caption while the conversation plays.
+function drawChat(ctx, w, h, caption) {
   const bg = ctx.createLinearGradient(0, 0, 0, h);
   bg.addColorStop(0, '#2b3a44');
   bg.addColorStop(1, '#16222a');
@@ -248,7 +272,32 @@ TEX.chat = canvasTexture(512, 352, (ctx, w, h) => {
   ctx.beginPath();
   ctx.arc(w - 28, 28, 8, 0, Math.PI * 2);
   ctx.fill();
-});
+  if (caption) {
+    ctx.fillStyle = 'rgba(19, 19, 18, 0.82)';
+    ctx.fillRect(0, h - 96, w, 96);
+    ctx.font = '600 22px system-ui, -apple-system, "Segoe UI", sans-serif';
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = caption.who === 'Kai' ? '#e8873a' : '#9fe6d2';
+    ctx.fillText(caption.who, 20, h - 84);
+    ctx.font = '24px system-ui, -apple-system, "Segoe UI", sans-serif';
+    ctx.fillStyle = '#e9dfd8';
+    // simple word wrap, two lines max
+    const lines = [];
+    let line = '';
+    for (const word of caption.text.split(' ')) {
+      const next = line ? line + ' ' + word : word;
+      if (ctx.measureText(next).width > w - 40 && line) { lines.push(line); line = word; } else line = next;
+    }
+    lines.push(line);
+    lines.slice(0, 2).forEach((l, i) => ctx.fillText(l, 20, h - 56 + i * 28));
+  }
+}
+TEX.chat = canvasTexture(512, 352, (ctx, w, h) => drawChat(ctx, w, h, null));
+function setChatCaption(caption) {
+  const c = TEX.chat.image;
+  drawChat(c.getContext('2d'), c.width, c.height, caption);
+  TEX.chat.needsUpdate = true;
+}
 
 // Map screen. Gold contour map with a turtle, following kit-reference.jpg.
 TEX.map = canvasTexture(512, 420, (ctx, w, h) => {
@@ -510,6 +559,8 @@ function soundModule() {
     new THREE.MeshStandardMaterial({ map: TEX.grille, transparent: true, alphaTest: 0.2, roughness: 0.6 })
   );
   grille.position.set(-0.09, 0.06, FRONT + 0.003);
+  grille.userData.hit = 'speaker';
+  recess.userData.hit = 'speaker';
   g.add(grille);
   g.userData.grille = grille;
 
@@ -520,9 +571,11 @@ function soundModule() {
     const recess = cylinder(0.036, 0.01, M.creamDark, 28);
     at(recess, 0.16, y, FRONT - 0.003);
     g.add(recess);
-    const b = cylinder(0.03, 0.03, m, 28);
+    const b = cylinder(0.03, 0.03, m.clone(), 28);
     at(b, 0.16, y, FRONT + 0.01);
+    b.userData.hit = 'speaker';
     g.add(b);
+    if (i === 0) g.userData.playLight = b.material; // orange button pulses while playing
   });
   // Green vertical slider.
   g.add(at(box(0.04, 0.38, 0.03, M.green, 0.018), 0.255, 0.02, FRONT + 0.01));
@@ -684,6 +737,7 @@ const canvasEl = document.getElementById('view');
 const labelEl = document.getElementById('label');
 const labelName = document.getElementById('label-name');
 const labelLine = document.getElementById('label-line');
+const labelHint = document.getElementById('label-hint');
 const btnApart = document.getElementById('btn-apart');
 const btnReset = document.getElementById('btn-reset');
 
@@ -817,7 +871,7 @@ if (renderer) {
   }
   btnReset.disabled = false;
   btnReset.addEventListener('click', resetView);
-  canvasEl.addEventListener('dblclick', resetView);
+  canvasEl.addEventListener('dblclick', (e) => { if (!partAt(e.clientX, e.clientY).part) resetView(); });
 
   // -------------------------------------------------------------------------
   // Interaction 2: take it apart, and click it back together.
@@ -850,6 +904,8 @@ if (renderer) {
     // LLM-written: button label toggles with the state
     btnApart.textContent = apart ? 'Put together' : 'Take apart';
     btnApart.setAttribute('aria-pressed', String(apart));
+    selectForSwap(null);
+    renderLabel();
   }
   btnApart.disabled = false;
   btnApart.setAttribute('aria-pressed', 'false');
@@ -871,21 +927,59 @@ if (renderer) {
     const hits = raycaster.intersectObjects(hitTargets, true);
     for (const hit of hits) {
       let o = hit.object;
-      while (o && !o.userData.part) o = o.parent;
-      if (o) return o.userData.part;
+      let area = null;
+      while (o && !o.userData.part) {
+        if (!area && o.userData.hit) area = o.userData.hit;
+        o = o.parent;
+      }
+      if (o) return { part: o.userData.part, area };
     }
-    return null;
+    return { part: null, area: null };
   }
 
   function placeLabel(key) {
     // On narrow screens, keep the label away from the part it describes.
-    if (window.innerWidth >= 760 && window.innerWidth / window.innerHeight >= 1) {
+    const wide = window.innerWidth >= 760 && window.innerWidth / window.innerHeight >= 1;
+    if (wide || !key) {
       labelEl.classList.remove('label--top');
       return;
     }
     parts[key].group.getWorldPosition(worldPos).project(camera);
     const screenY = (1 - worldPos.y) / 2; // 0 top, 1 bottom of the stage
     labelEl.classList.toggle('label--top', screenY > 0.55);
+  }
+
+  // One place decides what the label says, from the current state.
+  function renderLabel() {
+    let name = '', line = '', hint = '', anchor = null, speaker = null;
+    if (talk.index >= 0) {
+      const l = CONVERSATION[talk.index];
+      name = LABELS.chat.name; speaker = l.who; line = l.text;
+      hint = talk.index < CONVERSATION.length - 1 ? UI.chatNext : '';
+      anchor = 'chat';
+    } else if (selected) {
+      name = LABELS[selected].name; line = LABELS[selected].line; hint = UI.swapNext; anchor = selected;
+    } else if (focused) {
+      name = LABELS[focused].name; line = LABELS[focused].line; anchor = focused;
+      if (apart && focused !== 'camera') hint = UI.swapHint;
+      else if (focused === 'chat') hint = UI.chatHint;
+      else if (focused === 'sound') hint = listening ? UI.soundStop : UI.soundHint;
+    } else if (apart) {
+      name = UI.modulesTitle; line = MODULES_CONTEXT; hint = UI.swapHint;
+    }
+    if (!name) { labelEl.hidden = true; return; }
+    labelName.textContent = name;
+    labelLine.textContent = '';
+    if (speaker) {
+      const s = document.createElement('span');
+      s.className = 'speaker';
+      s.textContent = speaker + ': ';
+      labelLine.appendChild(s);
+    }
+    labelLine.appendChild(document.createTextNode(line));
+    labelHint.textContent = hint;
+    placeLabel(anchor);
+    labelEl.hidden = false;
   }
 
   function setFocus(key) {
@@ -897,18 +991,98 @@ if (renderer) {
       if (focused === 'camera') tween(cam.userData.light, { emissiveIntensity: 0 }, 260);
     }
     focused = key;
-    if (!key) {
-      labelEl.hidden = true;
-      return;
+    if (key) {
+      const p = parts[key];
+      tween(p.group.position, { z: 0.07 }, 320, ease.outBack);
+      if (p.screen) tween(p.screen, { emissiveIntensity: 1.15 }, 320);
+      if (key === 'camera') tween(cam.userData.light, { emissiveIntensity: 1.3 }, 320);
     }
-    const p = parts[key];
-    tween(p.group.position, { z: 0.07 }, 320, ease.outBack);
-    if (p.screen) tween(p.screen, { emissiveIntensity: 1.15 }, 320);
-    if (key === 'camera') tween(cam.userData.light, { emissiveIntensity: 1.3 }, 320);
-    labelName.textContent = LABELS[key].name;
-    labelLine.textContent = LABELS[key].line;
-    placeLabel(key);
-    labelEl.hidden = false;
+    renderLabel();
+  }
+
+  // -------------------------------------------------------------------------
+  // Interaction 4: talk to Kai. Tap the Chat screen; lines play one at a time.
+  // -------------------------------------------------------------------------
+  const LINE_MS = 3000;
+  const talk = {
+    index: -1,
+    timer: 0,
+    show(i) {
+      clearTimeout(this.timer);
+      this.index = i;
+      if (i >= CONVERSATION.length) {
+        this.index = -1;
+        setChatCaption(null);
+      } else {
+        setChatCaption(CONVERSATION[i]);
+        this.timer = setTimeout(() => this.show(i + 1), LINE_MS);
+      }
+      needsRender = true;
+      renderLabel();
+    },
+    start() { this.show(0); },
+    advance() { this.show(this.index + 1); },
+    stop() { clearTimeout(this.timer); if (this.index >= 0) this.show(CONVERSATION.length); },
+  };
+
+  // -------------------------------------------------------------------------
+  // Interaction 5: listen. Tap the speaker or a button; tap again to stop.
+  // -------------------------------------------------------------------------
+  const ocean = document.getElementById('ocean');
+  let listening = false;
+  function stopListening() {
+    listening = false;
+    ocean.pause();
+    ocean.currentTime = 0;
+    playLightOff();
+    renderLabel();
+  }
+  function playLightOff() {
+    const m = parts.sound.group.userData.playLight;
+    m.emissiveIntensity = 0;
+    needsRender = true;
+  }
+  function toggleListen() {
+    if (listening) { stopListening(); return; }
+    const p = ocean.play();
+    if (p && p.catch) p.catch(() => { listening = false; playLightOff(); renderLabel(); });
+    listening = true;
+    renderLabel();
+  }
+  ocean.addEventListener('ended', stopListening);
+  ocean.addEventListener('pause', () => { if (listening && ocean.ended) stopListening(); });
+
+  // -------------------------------------------------------------------------
+  // Interaction 6: swap modules. While apart: tap one module, then tap another.
+  // -------------------------------------------------------------------------
+  let selected = null;
+  function holderTarget(holder) {
+    const [sx, sy] = device.userData.slots[holder.userData.slot];
+    return { x: sx + Math.sign(sx) * APART.x, y: sy + Math.sign(sy) * APART.y, z: APART.z };
+  }
+  function selectForSwap(key) {
+    if (selected) {
+      const h = device.userData.holders[selected];
+      if (apart) tween(h.position, holderTarget(h), 300);
+    }
+    selected = key;
+    if (key) {
+      const h = device.userData.holders[key];
+      const t = holderTarget(h);
+      tween(h.position, { x: t.x, y: t.y, z: t.z + 0.12 }, 300, ease.outBack);
+    }
+    renderLabel();
+  }
+  function swapModules(a, b) {
+    const ha = device.userData.holders[a];
+    const hb = device.userData.holders[b];
+    const slotA = ha.userData.slot;
+    ha.userData.slot = hb.userData.slot;
+    hb.userData.slot = slotA;
+    selected = null;
+    tween(ha.position, holderTarget(ha), 600, ease.inOutCubic);
+    tween(hb.position, holderTarget(hb), 600, ease.inOutCubic);
+    renderLabel();
   }
 
   // Pointer handling: hover for mouse, tap for touch and pen. Drags go to OrbitControls.
@@ -919,10 +1093,10 @@ if (renderer) {
   });
   canvasEl.addEventListener('pointermove', (e) => {
     if (e.pointerType !== 'mouse' || e.buttons) return;
-    setFocus(partAt(e.clientX, e.clientY));
+    setFocus(partAt(e.clientX, e.clientY).part);
   });
   canvasEl.addEventListener('pointerleave', (e) => {
-    if (e.pointerType === 'mouse') setFocus(null);
+    if (e.pointerType === 'mouse' && !selected) setFocus(null);
   });
   canvasEl.addEventListener('pointerup', (e) => {
     if (!down) return;
@@ -931,15 +1105,37 @@ if (renderer) {
     down = null;
     if (moved > 10 || held > 400) return; // a drag, not a tap
     const now = performance.now();
-    if (e.pointerType !== 'mouse' && now - lastTap < 320) {
+    const hit = partAt(e.clientX, e.clientY);
+    // Double-tap on empty space resets the view. On a part, two taps are two taps.
+    if (e.pointerType !== 'mouse' && !hit.part && now - lastTap < 320) {
       lastTap = 0;
       resetView();
       return;
     }
     lastTap = now;
-    setFocus(partAt(e.clientX, e.clientY));
+    tap(hit, e.pointerType === 'mouse');
   });
   canvasEl.addEventListener('pointercancel', () => { down = null; });
+
+  function tap({ part, area }, isMouse) {
+    // Hover already focused the part on desktop; on touch the first tap does it.
+    const wasFocused = focused === part;
+    setFocus(part);
+    if (!part) { selectForSwap(null); return; }
+
+    if (apart) {
+      if (part === 'camera') return;
+      if (!selected) selectForSwap(part);
+      else if (selected === part) selectForSwap(null);
+      else swapModules(selected, part);
+      return;
+    }
+    if (part === 'chat' && area === 'screen' && (isMouse || wasFocused)) {
+      if (talk.index >= 0) talk.advance(); else talk.start();
+    } else if (part === 'sound' && area === 'speaker' && (isMouse || wasFocused)) {
+      toggleListen();
+    }
+  }
 
   // -------------------------------------------------------------------------
   // Sizing and render loop
@@ -960,9 +1156,16 @@ if (renderer) {
   resize();
   controls.addEventListener('change', () => { needsRender = true; });
 
+  const playLight = parts.sound.group.userData.playLight;
+  playLight.emissive.set(C.orange);
+  playLight.emissiveIntensity = 0;
   function tick(now) {
     const animating = updateTweens(now);
     const moved = controls.update();
+    if (listening) {
+      playLight.emissiveIntensity = 0.35 + 0.35 * Math.sin(now / 160);
+      needsRender = true;
+    }
     if (needsRender || animating || moved) {
       renderer.render(scene, camera);
       needsRender = false;
@@ -977,6 +1180,6 @@ if (renderer) {
   // Exposed for the next steps and for poking at in the console.
   window.kit = {
     THREE, scene, camera, renderer, controls, world, device, cam, parts, LABELS, reducedMotion,
-    setFocus, setApart, resetView, requestRender: () => { needsRender = true; },
+    setFocus, setApart, resetView, talk, toggleListen, selectForSwap, swapModules, requestRender: () => { needsRender = true; },
   };
 }
