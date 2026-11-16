@@ -1,7 +1,8 @@
+// Vendored from three@0.170.0 (examples/jsm). Only change: the import of 'three' points at the relative file so no import map is needed.
 import {
 	BoxGeometry,
 	Vector3
-} from 'three';
+} from '../../three.module.min.js';
 
 const _tempNormal = new Vector3();
 

@@ -1,3 +1,4 @@
+// Vendored from three@0.170.0 (examples/jsm). Only change: the import of 'three' points at the relative file so no import map is needed.
 /**
  * https://github.com/google/model-viewer/blob/master/packages/model-viewer/src/three-components/EnvironmentScene.ts
  */
@@ -10,7 +11,7 @@ import {
  	MeshStandardMaterial,
  	PointLight,
  	Scene,
-} from 'three';
+} from '../../three.module.min.js';
 
 class RoomEnvironment extends Scene {
 

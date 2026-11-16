@@ -1,13 +1,13 @@
 // Digital twin kit, v1. Step 1: page shell and static model. Step 2: turn it,
 // take it apart, point at a part. Step 3: talk to Kai, listen, swap modules.
-// Three.js r170, vendored in assets/vendor/three (MIT, see LICENSE there).
+// Three.js r170 (minified build), vendored in assets/vendor/three (MIT, see LICENSE there).
 // The model is built from primitives. Each module is its own Group so later
 // steps can lift, pull apart and swap them.
 
-import * as THREE from 'three';
-import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
-import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import * as THREE from './vendor/three/three.module.min.js';
+import { RoundedBoxGeometry } from './vendor/three/addons/geometries/RoundedBoxGeometry.js';
+import { RoomEnvironment } from './vendor/three/addons/environments/RoomEnvironment.js';
+import { OrbitControls } from './vendor/three/addons/controls/OrbitControls.js';
 
 // ---------------------------------------------------------------------------
 // Text from the deck "OceanX KAI Kit Orientation" (Modules and Camera slides).
@@ -752,6 +752,8 @@ function webglAvailable() {
 
 function showFallback() {
   document.getElementById('loading').hidden = true;
+  const img = document.querySelector('#fallback img');
+  if (!img.src) img.src = img.dataset.src; // only download the render when it is needed
   document.getElementById('fallback').hidden = false;
   canvasEl.hidden = true;
   window.__kitReady = true; // stop the timeout from toggling again

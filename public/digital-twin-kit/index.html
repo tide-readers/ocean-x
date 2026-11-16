@@ -6,15 +6,8 @@
   <!-- LLM-written: page title -->
   <title>KAI kit</title>
   <meta name="description" content="Interactive 3D model of the KAI learning kit.">
-  <link rel="stylesheet" href="assets/style.css">
-  <script type="importmap">
-    {
-      "imports": {
-        "three": "./assets/vendor/three/three.module.js",
-        "three/addons/": "./assets/vendor/three/addons/"
-      }
-    }
-  </script>
+  <!-- Absolute paths, so the page works at both /digital-twin-kit and /digital-twin-kit/ -->
+  <link rel="stylesheet" href="/digital-twin-kit/assets/style.css">
 </head>
 <body>
   <header class="top">
@@ -30,7 +23,7 @@
     <p id="loading" class="status">Loading the kit…</p>
 
     <div id="fallback" hidden>
-      <img src="assets/kit-reference.jpg" alt="The KAI device: four cream and orange modules clicked together, seen from the front and the side.">
+      <img data-src="/digital-twin-kit/assets/kit-reference.jpg" alt="The KAI device: four cream and orange modules clicked together, seen from the front and the side.">
       <!-- LLM-written: fallback message -->
       <p class="status">3D view isn't available on this device.</p>
     </div>
@@ -54,7 +47,7 @@
        normalised. Source: https://home.nps.gov/glba/learn/nature/soundclips.htm
        License: US federal government work, public domain. An <audio> element so the iPhone silent
        switch does not mute it the way it can mute Web Audio. -->
-  <audio id="ocean" preload="none" src="assets/humpback-glacier-bay.mp3"></audio>
+  <audio id="ocean" preload="none" src="/digital-twin-kit/assets/humpback-glacier-bay.mp3"></audio>
 
   <script>
     // If the module script never reports in (old browser, blocked WebGL), show the fallback.
@@ -62,10 +55,12 @@
     setTimeout(function () {
       if (!window.__kitReady) {
         document.getElementById('loading').hidden = true;
+        var img = document.querySelector('#fallback img');
+        if (!img.src) img.src = img.getAttribute('data-src');
         document.getElementById('fallback').hidden = false;
       }
     }, 8000);
   </script>
-  <script type="module" src="assets/app.js"></script>
+  <script type="module" src="/digital-twin-kit/assets/app.js"></script>
 </body>
 </html>

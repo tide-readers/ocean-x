@@ -1,3 +1,4 @@
+// Vendored from three@0.170.0 (examples/jsm). Only change: the import of 'three' points at the relative file so no import map is needed.
 import {
 	Controls,
 	MOUSE,
@@ -9,7 +10,7 @@ import {
 	Plane,
 	Ray,
 	MathUtils
-} from 'three';
+} from '../../three.module.min.js';
 
 // OrbitControls performs orbiting, dollying (zooming), and panning.
 // Unlike TrackballControls, it maintains the "up" direction object.up (+Y by default).
