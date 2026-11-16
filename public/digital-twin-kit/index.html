@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <!-- LLM-written: page title -->
+  <title>KAI kit</title>
+  <meta name="description" content="Interactive 3D model of the KAI learning kit.">
+  <!-- Absolute paths, so the page works at both /digital-twin-kit and /digital-twin-kit/ -->
+  <link rel="stylesheet" href="/digital-twin-kit/assets/style.css">
+</head>
+<body>
+  <header class="top">
+    <!-- Product names from the deck "OceanX KAI Kit Orientation" -->
+    <p class="brand">OCEANX</p>
+    <h1>KAI</h1>
+  </header>
+
+  <main id="stage" aria-label="3D model of the KAI device">
+    <canvas id="view"></canvas>
+
+    <!-- LLM-written: loading message -->
+    <p id="loading" class="status">Loading the kit…</p>
+
+    <div id="fallback" hidden>
+      <img data-src="/digital-twin-kit/assets/kit-reference.jpg" alt="The KAI device: four cream and orange modules clicked together, seen from the front and the side.">
+      <!-- LLM-written: fallback message -->
+      <p class="status">3D view isn't available on this device.</p>
+    </div>
+
+    <!-- Label panel. Names and lines come from the deck (see app.js); hints are LLM-written there. -->
+    <aside id="label" class="label" hidden aria-live="polite">
+      <h2 id="label-name"></h2>
+      <p id="label-line"></p>
+      <p id="label-hint" class="hint"></p>
+    </aside>
+  </main>
+
+  <nav id="bar" class="bar" aria-label="Kit controls">
+    <!-- LLM-written: button labels. Swapping needs no button: while apart, tap a module, then tap another. -->
+    <button type="button" id="btn-apart" disabled>Take apart</button>
+    <button type="button" id="btn-reset" disabled>Reset view</button>
+  </nav>
+
+  <!-- Interaction 5, "Listen". Humpback whale calls recorded underwater in Bartlett Cove, Glacier Bay,
+       by the National Park Service ("Humpback whale moo etc", 25 Sep 2001), trimmed to 16 s and
+       normalised. Source: https://home.nps.gov/glba/learn/nature/soundclips.htm
+       License: US federal government work, public domain. An <audio> element so the iPhone silent
+       switch does not mute it the way it can mute Web Audio. -->
+  <audio id="ocean" preload="none" src="/digital-twin-kit/assets/humpback-glacier-bay.mp3"></audio>
+
+  <script>
+    // If the module script never reports in (old browser, blocked WebGL), show the fallback.
+    window.__kitReady = false;
+    setTimeout(function () {
+      if (!window.__kitReady) {
+        document.getElementById('loading').hidden = true;
+        var img = document.querySelector('#fallback img');
+        if (!img.src) img.src = img.getAttribute('data-src');
+        document.getElementById('fallback').hidden = false;
+      }
+    }, 8000);
+  </script>
+  <script type="module" src="/digital-twin-kit/assets/app.js"></script>
+</body>
+</html>
