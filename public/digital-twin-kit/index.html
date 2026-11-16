@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <!-- LLM-written: page title -->
+  <title>KAI kit</title>
+  <meta name="description" content="Interactive 3D model of the KAI learning kit.">
+  <link rel="stylesheet" href="assets/style.css">
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "./assets/vendor/three/three.module.js",
+        "three/addons/": "./assets/vendor/three/addons/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <header class="top">
+    <!-- Product names from the deck "OceanX KAI Kit Orientation" -->
+    <p class="brand">OCEANX</p>
+    <h1>KAI</h1>
+  </header>
+
+  <main id="stage" aria-label="3D model of the KAI device">
+    <canvas id="view"></canvas>
+
+    <!-- LLM-written: loading message -->
+    <p id="loading" class="status">Loading the kit…</p>
+
+    <div id="fallback" hidden>
+      <img src="assets/kit-reference.jpg" alt="The KAI device: four cream and orange modules clicked together, seen from the front and the side.">
+      <!-- LLM-written: fallback message -->
+      <p class="status">3D view isn't available on this device.</p>
+    </div>
+
+    <!-- Label panel for interaction 3 (step 2). Text filled in from the deck labels in app.js. -->
+    <aside id="label" class="label" hidden aria-live="polite">
+      <h2 id="label-name"></h2>
+      <p id="label-line"></p>
+    </aside>
+  </main>
+
+  <nav id="bar" class="bar" aria-label="Kit controls">
+    <!-- LLM-written: button labels. Buttons are placeholders until step 2 and 3. -->
+    <button type="button" id="btn-apart" disabled>Take apart</button>
+    <button type="button" id="btn-swap" disabled>Swap</button>
+    <button type="button" id="btn-reset" disabled>Reset view</button>
+  </nav>
+
+  <script>
+    // If the module script never reports in (old browser, blocked WebGL), show the fallback.
+    window.__kitReady = false;
+    setTimeout(function () {
+      if (!window.__kitReady) {
+        document.getElementById('loading').hidden = true;
+        document.getElementById('fallback').hidden = false;
+      }
+    }, 8000);
+  </script>
+  <script type="module" src="assets/app.js"></script>
+</body>
+</html>
