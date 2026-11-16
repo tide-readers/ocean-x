@@ -178,6 +178,130 @@ body {
   cursor: default;
 }
 
+/* Which bar items show depends on the mode: kit, camera or pov. */
+.bar > [data-modes] { display: none; }
+body[data-mode="kit"] .bar > [data-modes~="kit"],
+body[data-mode="camera"] .bar > [data-modes~="camera"],
+body[data-mode="pov"] .bar > [data-modes~="pov"] { display: block; }
+
+/* The camera button is a different kind of action: a gap before it and the orange accent. */
+.bar .gap { flex: 0 0 20px; }
+.bar button.accent {
+  border-color: var(--orange);
+  color: var(--orange);
+}
+.bar button.accent:disabled { border-color: var(--line); color: #b5b0aa; }
+body[data-mode="pov"] .bar button { flex: 0 1 240px; margin: 0 auto; }
+
+/* Camera point of view */
+.viewfinder {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: none;
+  pointer-events: none;
+}
+body[data-mode="pov"] .viewfinder { display: block; }
+
+.vf-dim {
+  position: absolute;
+  inset: 0;
+  background: rgba(19, 19, 18, 0.88);
+  opacity: 1;
+  transition: opacity 900ms ease;
+}
+.viewfinder.awake .vf-dim { opacity: 0; }
+
+.vf-corner {
+  position: absolute;
+  width: 26px;
+  height: 26px;
+  border: 3px solid var(--ink);
+  opacity: 0.75;
+}
+.vf-corner.tl { top: calc(72px + env(safe-area-inset-top)); left: 16px; border-right: 0; border-bottom: 0; border-top-left-radius: 6px; }
+.vf-corner.tr { top: calc(72px + env(safe-area-inset-top)); right: 16px; border-left: 0; border-bottom: 0; border-top-right-radius: 6px; }
+.vf-corner.bl { bottom: 16px; left: 16px; border-right: 0; border-top: 0; border-bottom-left-radius: 6px; }
+.vf-corner.br { bottom: 16px; right: 16px; border-left: 0; border-top: 0; border-bottom-right-radius: 6px; }
+
+.vf-rec {
+  position: absolute;
+  top: calc(80px + env(safe-area-inset-top));
+  right: 52px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #d93b2b;
+  opacity: 0;
+}
+.viewfinder.awake .vf-rec { opacity: 1; animation: vf-blink 1.2s steps(1) infinite; }
+@keyframes vf-blink { 50% { opacity: 0.25; } }
+
+.vf-light {
+  position: absolute;
+  top: calc(80px + env(safe-area-inset-top));
+  left: 50%;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  transform: translateX(-50%);
+  background: var(--orange);
+  box-shadow: 0 0 22px 8px rgba(217, 104, 43, 0.55);
+  opacity: 0;
+  transition: opacity 400ms ease;
+}
+.viewfinder.awake .vf-light { opacity: 1; }
+
+.vf-hint,
+.reaction {
+  position: absolute;
+  left: 50%;
+  bottom: 24px;
+  width: min(440px, calc(100% - 64px));
+  transform: translateX(-50%);
+  margin: 0;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 8px 30px rgba(19, 19, 18, 0.10);
+}
+.vf-hint {
+  padding: 10px 14px;
+  font-size: 15px;
+  text-align: center;
+  opacity: 0;
+  transition: opacity 300ms ease;
+}
+.viewfinder.awake .vf-hint { opacity: 1; }
+.viewfinder.thrown .vf-hint { opacity: 0; }
+
+.reaction {
+  padding: 16px;
+  pointer-events: auto;
+}
+.reaction[hidden] { display: none; }
+.reaction.right { border-color: var(--aqua); background: #eefaf5; }
+.reaction.wrong { border-color: var(--orange); background: #fdf1e9; }
+.reaction p {
+  margin: 0 0 12px;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.reaction-actions { display: flex; gap: 8px; }
+.reaction-actions button {
+  flex: 1 1 0;
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg);
+  color: var(--ink);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
 /* Wide screens: label beside the device, bar stays centered. */
 @media (min-width: 760px) and (min-aspect-ratio: 1/1) {
   .top { padding: 24px 28px 0; }
@@ -201,6 +325,8 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .label { transition-duration: 1ms; }
+  .vf-dim, .vf-light, .vf-hint { transition-duration: 1ms; }
+  .viewfinder.awake .vf-rec { animation: none; }
 }
 
 /* Narrow screens: label moves to the top when the focused part is in the lower half. */

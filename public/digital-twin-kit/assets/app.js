@@ -1,5 +1,6 @@
 // Digital twin kit, v1. Step 1: page shell and static model. Step 2: turn it,
 // take it apart, point at a part. Step 3: talk to Kai, listen, swap modules.
+// v2: the camera module gets its own screen (camera mode) with a point-of-view test (pov mode).
 // Three.js r170 (minified build), vendored in assets/vendor/three (MIT, see LICENSE there).
 // The model is built from primitives. Each module is its own Group so later
 // steps can lift, pull apart and swap them.
@@ -41,6 +42,12 @@ const UI = {
   chatNext: 'Tap the screen for the next line.',
   soundHint: 'Tap the speaker to listen.',
   soundStop: 'Tap the speaker to stop.',
+  // v2 camera screen. Button labels live in index.html.
+  povHint: 'Tap the bin where the wrapper goes.',
+  binPlastic: 'Plastic',
+  binGeneral: 'General waste',
+  right: '−1 kg in Kai’s net tomorrow.',
+  wrong: '+1 hour of work for Kai tomorrow.',
 };
 
 // ---------------------------------------------------------------------------
@@ -707,6 +714,7 @@ const tweens = [];
 const ease = {
   outCubic: (t) => 1 - Math.pow(1 - t, 3),
   inOutCubic: (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2),
+  inCubic: (t) => t * t * t,
   outBack: (t) => { const c = 2.4; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); },
 };
 function tween(target, to, duration, easing = ease.outCubic, delay = 0, onDone) {
@@ -740,6 +748,15 @@ const labelLine = document.getElementById('label-line');
 const labelHint = document.getElementById('label-hint');
 const btnApart = document.getElementById('btn-apart');
 const btnReset = document.getElementById('btn-reset');
+const btnCamera = document.getElementById('btn-camera');
+const btnBack = document.getElementById('btn-back');
+const btnTry = document.getElementById('btn-try');
+const btnAgain = document.getElementById('btn-again');
+const btnBackReaction = document.getElementById('btn-back-reaction');
+const viewfinderEl = document.getElementById('viewfinder');
+const vfHint = document.getElementById('vf-hint');
+const reactionEl = document.getElementById('reaction');
+const reactionText = document.getElementById('reaction-text');
 
 function webglAvailable() {
   try {
@@ -790,17 +807,24 @@ if (renderer) {
   const world = new THREE.Group();
   scene.add(world);
 
+  // Kit mode shows kitGroup, camera mode shows camGroup. Only one is in the world at a time.
+  const kitGroup = new THREE.Group();
   const device = buildDevice();
   device.rotation.x = -0.08; // lean back a touch
-  world.add(device);
+  kitGroup.add(device);
   const deviceShadow = shadowPlane(2.0, 0.9);
   deviceShadow.position.set(0, -DEVICE.h / 2 - 0.03, 0.05);
-  world.add(deviceShadow);
+  kitGroup.add(deviceShadow);
+  world.add(kitGroup);
 
+  const camGroup = new THREE.Group();
   const cam = buildCamera();
-  world.add(cam);
+  cam.position.set(0, 0.12, 0);
+  cam.rotation.set(-0.05, -0.35, 0.05);
+  camGroup.add(cam);
   const camShadow = shadowPlane(1.1, 0.6);
-  world.add(camShadow);
+  camShadow.position.set(0, cam.position.y - cam.userData.size.H / 2 - 0.03, 0.05);
+  camGroup.add(camShadow);
 
   const parts = {
     notes:  { group: device.userData.modules.notes,  screen: null },
@@ -812,6 +836,9 @@ if (renderer) {
   for (const key of ['notes', 'chat', 'map']) {
     parts[key].group.traverse((o) => { if (o.userData.screenMaterial) parts[key].screen = o.userData.screenMaterial; });
   }
+  const kitTargets = ['notes', 'chat', 'map', 'sound'].map((k) => parts[k].group);
+  const camTargets = [parts.camera.group];
+  let mode = 'kit'; // 'kit' | 'camera' | 'pov'
 
   // -------------------------------------------------------------------------
   // Interaction 1: turn it. Drag to rotate, pinch or scroll to zoom, double-tap to reset.
@@ -825,27 +852,13 @@ if (renderer) {
   controls.minPolarAngle = Math.PI / 2 - 0.65;
   controls.maxPolarAngle = Math.PI / 2 + 0.45;
 
-  // Portrait puts the camera module below the device, landscape beside it.
-  function layout(aspect) {
-    if (aspect < 0.9) {
-      cam.position.set(0.2, -DEVICE.h / 2 - 0.56, 0.12);
-      cam.rotation.set(-0.05, -0.3, 0.1);
-    } else {
-      cam.position.set(DEVICE.w / 2 + 0.5, -0.1, 0.05);
-      cam.rotation.set(-0.05, -0.45, 0.08);
-    }
-    camShadow.position.set(cam.position.x, cam.position.y - cam.userData.size.H / 2 - 0.03, cam.position.z + 0.05);
-  }
-
   // Fit the camera so the whole model is in view, and remember that as home.
   const bounds = new THREE.Box3();
   const size = new THREE.Vector3();
   const center = new THREE.Vector3();
   const home = { position: new THREE.Vector3(), target: new THREE.Vector3() };
   function frame(aspect) {
-    cam.userData.strap.visible = false; // strap loop shouldn't push the device smaller
     bounds.setFromObject(world);
-    cam.userData.strap.visible = true;
     bounds.getSize(size);
     bounds.getCenter(center);
     const vfov = THREE.MathUtils.degToRad(camera.fov);
@@ -873,7 +886,7 @@ if (renderer) {
   }
   btnReset.disabled = false;
   btnReset.addEventListener('click', resetView);
-  canvasEl.addEventListener('dblclick', (e) => { if (!partAt(e.clientX, e.clientY).part) resetView(); });
+  canvasEl.addEventListener('dblclick', (e) => { if (mode !== 'pov' && !partAt(e.clientX, e.clientY).part) resetView(); });
 
   // -------------------------------------------------------------------------
   // Interaction 2: take it apart, and click it back together.
@@ -918,25 +931,25 @@ if (renderer) {
   // -------------------------------------------------------------------------
   const raycaster = new THREE.Raycaster();
   const pointer = new THREE.Vector2();
-  const hitTargets = Object.values(parts).map((p) => p.group);
   let focused = null;
   const worldPos = new THREE.Vector3();
 
   function partAt(clientX, clientY) {
     const r = canvasEl.getBoundingClientRect();
     pointer.set(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
-    raycaster.setFromCamera(pointer, camera);
-    const hits = raycaster.intersectObjects(hitTargets, true);
+    const targets = mode === 'kit' ? kitTargets : mode === 'camera' ? camTargets : pov.targets;
+    raycaster.setFromCamera(pointer, mode === 'pov' ? povCamera : camera);
+    const hits = raycaster.intersectObjects(targets, true);
     for (const hit of hits) {
       let o = hit.object;
       let area = null;
-      while (o && !o.userData.part) {
+      while (o && !o.userData.part && !o.userData.bin) {
         if (!area && o.userData.hit) area = o.userData.hit;
         o = o.parent;
       }
-      if (o) return { part: o.userData.part, area };
+      if (o) return { part: o.userData.part || null, bin: o.userData.bin || null, area };
     }
-    return { part: null, area: null };
+    return { part: null, bin: null, area: null };
   }
 
   function placeLabel(key) {
@@ -954,7 +967,10 @@ if (renderer) {
   // One place decides what the label says, from the current state.
   function renderLabel() {
     let name = '', line = '', hint = '', anchor = null, speaker = null;
-    if (talk.index >= 0) {
+    if (mode === 'pov') { labelEl.hidden = true; return; }
+    if (mode === 'camera') {
+      name = LABELS.camera.name; line = LABELS.camera.line; anchor = 'camera';
+    } else if (talk.index >= 0) {
       const l = CONVERSATION[talk.index];
       name = LABELS.chat.name; speaker = l.who; line = l.text;
       hint = talk.index < CONVERSATION.length - 1 ? UI.chatNext : '';
@@ -1095,10 +1111,12 @@ if (renderer) {
   });
   canvasEl.addEventListener('pointermove', (e) => {
     if (e.pointerType !== 'mouse' || e.buttons) return;
-    setFocus(partAt(e.clientX, e.clientY).part);
+    const hit = partAt(e.clientX, e.clientY);
+    if (mode === 'pov') pov.hover(hit.bin); else setFocus(hit.part);
   });
   canvasEl.addEventListener('pointerleave', (e) => {
-    if (e.pointerType === 'mouse' && !selected) setFocus(null);
+    if (e.pointerType !== 'mouse') return;
+    if (mode === 'pov') pov.hover(null); else if (!selected) setFocus(null);
   });
   canvasEl.addEventListener('pointerup', (e) => {
     if (!down) return;
@@ -1109,7 +1127,7 @@ if (renderer) {
     const now = performance.now();
     const hit = partAt(e.clientX, e.clientY);
     // Double-tap on empty space resets the view. On a part, two taps are two taps.
-    if (e.pointerType !== 'mouse' && !hit.part && now - lastTap < 320) {
+    if (mode !== 'pov' && e.pointerType !== 'mouse' && !hit.part && now - lastTap < 320) {
       lastTap = 0;
       resetView();
       return;
@@ -1119,10 +1137,12 @@ if (renderer) {
   });
   canvasEl.addEventListener('pointercancel', () => { down = null; });
 
-  function tap({ part, area }, isMouse) {
+  function tap({ part, area, bin }, isMouse) {
+    if (mode === 'pov') { if (bin) pov.throwInto(bin); return; }
     // Hover already focused the part on desktop; on touch the first tap does it.
     const wasFocused = focused === part;
     setFocus(part);
+    if (mode === 'camera') return;
     if (!part) { selectForSwap(null); return; }
 
     if (apart) {
@@ -1140,6 +1160,202 @@ if (renderer) {
   }
 
   // -------------------------------------------------------------------------
+  // v2: camera screen and the point-of-view test.
+  // -------------------------------------------------------------------------
+  const povScene = new THREE.Scene();
+  povScene.environment = scene.environment;
+  povScene.environmentIntensity = 0.5;
+  povScene.add(new THREE.HemisphereLight(0xffffff, 0xd9d2c8, 0.9));
+  const povKey = new THREE.DirectionalLight(0xffffff, 1.5);
+  povKey.position.set(1, 3, 2);
+  povScene.add(povKey);
+  const povCamera = new THREE.PerspectiveCamera(50, 1, 0.1, 50);
+  povCamera.position.set(0, 1.05, 1.55);
+  povCamera.lookAt(0, 0.3, -0.35);
+
+  const floor = new THREE.Mesh(new THREE.CircleGeometry(5, 48), mat(0xF2EEE8, { roughness: 0.95 }));
+  floor.rotation.x = -Math.PI / 2;
+  povScene.add(floor);
+
+  // A bin: tapered body, lid ring, label on the front. The body material is cloned so hover can light it.
+  function buildBin(key, color, labelText, labelBg) {
+    const g = new THREE.Group();
+    g.userData.bin = key;
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.25, 0.78, 36), mat(color, { roughness: 0.55 }));
+    body.position.y = 0.39;
+    g.add(body);
+    g.userData.body = body.material;
+    const lid = new THREE.Mesh(new THREE.CylinderGeometry(0.33, 0.33, 0.06, 36), mat(C.ink, { roughness: 0.5 }));
+    lid.position.y = 0.81;
+    g.add(lid);
+    const mouth = new THREE.Mesh(new THREE.CircleGeometry(0.27, 36), mat(0x0d0e0d, { roughness: 1 }));
+    mouth.rotation.x = -Math.PI / 2;
+    mouth.position.y = 0.845;
+    g.add(mouth);
+    const label = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.36, 0.14),
+      new THREE.MeshStandardMaterial({
+        map: canvasTexture(512, 200, (ctx, w, h) => {
+          ctx.fillStyle = labelBg; roundRect(ctx, 0, 0, w, h, 40); ctx.fill();
+          ctx.fillStyle = '#131312';
+          ctx.font = '700 72px system-ui, -apple-system, "Segoe UI", sans-serif';
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText(labelText, w / 2, h / 2 + 4);
+        }), transparent: true, roughness: 0.7,
+      })
+    );
+    label.position.set(0, 0.5, 0.29);
+    label.rotation.x = -0.08;
+    g.add(label);
+    const shadow = shadowPlane(1.1, 0.8);
+    shadow.position.y = 0.004;
+    g.add(shadow);
+    return g;
+  }
+  const binPlastic = buildBin('plastic', 0x4FA8DC, UI.binPlastic, '#dff4ff');
+  binPlastic.position.set(-0.5, 0, -0.75);
+  const binGeneral = buildBin('general', 0x5A5C60, UI.binGeneral, '#e9e6e1');
+  binGeneral.position.set(0.5, 0, -0.75);
+  povScene.add(binPlastic, binGeneral);
+  const bins = { plastic: binPlastic, general: binGeneral };
+
+  // The wrapper: a crumpled snack wrapper in orange and paper tones.
+  const wrapper = new THREE.Group();
+  const wrapperTex = canvasTexture(256, 160, (ctx, w, h) => {
+    ctx.fillStyle = '#EF7A1F'; ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = '#E9DFD8';
+    for (let x = 0; x < w; x += 48) ctx.fillRect(x, 0, 20, h);
+    ctx.strokeStyle = '#131312'; ctx.lineWidth = 6; ctx.beginPath();
+    for (let x = 0; x <= w; x += 8) { const y = h / 2 + Math.sin(x / 14) * 18; if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); }
+    ctx.stroke();
+  });
+  const wrapperMat = new THREE.MeshStandardMaterial({ map: wrapperTex, roughness: 0.6 });
+  const wrapBody = new THREE.Mesh(roundedBox(0.26, 0.05, 0.16, 0.02), wrapperMat);
+  wrapper.add(wrapBody);
+  const wrapFold = new THREE.Mesh(roundedBox(0.12, 0.05, 0.1, 0.02), wrapperMat);
+  wrapFold.position.set(0.06, 0.035, -0.02);
+  wrapFold.rotation.set(0.3, 0.5, 0.2);
+  wrapper.add(wrapFold);
+  const wrapShadow = shadowPlane(0.5, 0.36);
+  wrapShadow.position.y = -0.028;
+  wrapper.add(wrapShadow);
+  wrapper.rotation.y = 0.4;
+  wrapper.visible = false;
+  povScene.add(wrapper);
+  const WRAP_REST = { x: 0, y: 0.03, z: 0.38 };
+  const WRAP_START = { x: 0.05, y: 0.03, z: 1.1 };
+
+  const pov = {
+    state: 'off', // off | asleep | awake | thrown
+    targets: [binPlastic, binGeneral],
+    timer: 0,
+    hovered: null,
+    fit(aspect) {
+      // Keep both bins in frame on narrow screens: widen the lens, never narrower than 48 degrees.
+      const hHalf = THREE.MathUtils.degToRad(26);
+      povCamera.fov = Math.max(48, THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(hHalf) / aspect)));
+      povCamera.aspect = aspect;
+      povCamera.updateProjectionMatrix();
+      // On wide screens the hint strip sits low, so the wrapper rests nearer the middle of the frame.
+      WRAP_REST.z = aspect >= 1 ? -0.05 : 0.38;
+      if (this.state === 'awake') wrapper.position.z = WRAP_REST.z;
+    },
+    enter() {
+      this.state = 'asleep';
+      viewfinderEl.className = 'viewfinder asleep';
+      reactionEl.hidden = true;
+      vfHint.textContent = UI.povHint;
+      wrapper.visible = false;
+      wrapper.position.set(WRAP_START.x, WRAP_START.y, WRAP_START.z);
+      needsRender = true;
+      clearTimeout(this.timer);
+      this.timer = setTimeout(() => this.wake(), reducedMotion ? 300 : 1200);
+    },
+    wake() {
+      this.state = 'awake';
+      viewfinderEl.className = 'viewfinder awake';
+      wrapper.visible = true;
+      tween(wrapper.position, { x: WRAP_REST.x, y: WRAP_REST.y, z: WRAP_REST.z }, 700, ease.outCubic);
+    },
+    hover(key) {
+      if (this.state !== 'awake') key = null;
+      if (key === this.hovered) return;
+      if (this.hovered) tween(bins[this.hovered].userData.body, { emissiveIntensity: 0 }, 200);
+      this.hovered = key;
+      if (key) {
+        bins[key].userData.body.emissive.set(0xffffff);
+        tween(bins[key].userData.body, { emissiveIntensity: 0.18 }, 200);
+      }
+      canvasEl.style.cursor = key ? 'pointer' : '';
+    },
+    throwInto(key) {
+      if (this.state !== 'awake') return;
+      this.state = 'thrown';
+      this.hover(null);
+      viewfinderEl.className = 'viewfinder awake thrown';
+      const b = bins[key].position;
+      const flight = reducedMotion ? 200 : 750;
+      tween(wrapper.position, { x: b.x, z: b.z }, flight, ease.inOutCubic);
+      // Height goes up, then down into the bin. Two tweens on a helper object, applied in tick.
+      const arc = { y: WRAP_REST.y };
+      tween(arc, { y: 1.05 }, flight * 0.5, ease.outCubic, 0, () => {
+        tween(arc, { y: 0.6 }, flight * 0.5, ease.inCubic, 0, () => {
+          wrapper.visible = false;
+          needsRender = true;
+          this.react(key);
+        });
+      });
+      this.arc = arc;
+      tween(wrapper.rotation, { x: 1.6, y: 2.2 }, flight, ease.inOutCubic);
+    },
+    react(key) {
+      const right = key === 'plastic';
+      reactionText.textContent = right ? UI.right : UI.wrong;
+      reactionEl.className = 'reaction ' + (right ? 'right' : 'wrong');
+      reactionEl.hidden = false;
+    },
+    reset() {
+      // Try again: straight to awake, no sleep beat.
+      reactionEl.hidden = true;
+      this.state = 'awake';
+      viewfinderEl.className = 'viewfinder awake';
+      wrapper.rotation.set(0, 0.4, 0);
+      wrapper.position.set(WRAP_START.x, WRAP_START.y, WRAP_START.z);
+      wrapper.visible = true;
+      tween(wrapper.position, { x: WRAP_REST.x, y: WRAP_REST.y, z: WRAP_REST.z }, 600, ease.outCubic);
+    },
+    leave() {
+      clearTimeout(this.timer);
+      this.hover(null);
+      this.state = 'off';
+      reactionEl.hidden = true;
+      viewfinderEl.className = 'viewfinder';
+    },
+    arc: null,
+  };
+
+  function setMode(next) {
+    if (next === mode) return;
+    if (mode === 'kit') { talk.stop(); if (listening) stopListening(); selectForSwap(null); }
+    if (mode === 'pov') pov.leave();
+    setFocus(null);
+    mode = next;
+    document.body.dataset.mode = mode;
+    if (mode === 'kit') { world.remove(camGroup); world.add(kitGroup); controls.enabled = true; }
+    if (mode === 'camera') { world.remove(kitGroup); world.add(camGroup); controls.enabled = true; }
+    if (mode === 'pov') { controls.enabled = false; pov.enter(); }
+    if (mode !== 'pov') frame(camera.aspect);
+    renderLabel();
+    needsRender = true;
+  }
+  btnCamera.disabled = false;
+  btnCamera.addEventListener('click', () => setMode('camera'));
+  btnTry.addEventListener('click', () => setMode('pov'));
+  btnBack.addEventListener('click', () => setMode('kit'));
+  btnBackReaction.addEventListener('click', () => setMode('kit'));
+  btnAgain.addEventListener('click', () => pov.reset());
+
+  // -------------------------------------------------------------------------
   // Sizing and render loop
   // -------------------------------------------------------------------------
   let needsRender = true;
@@ -1149,8 +1365,8 @@ if (renderer) {
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
-    layout(camera.aspect);
-    frame(camera.aspect);
+    pov.fit(w / h);
+    if (mode !== 'pov') frame(camera.aspect);
     if (focused) placeLabel(focused);
     needsRender = true;
   }
@@ -1168,8 +1384,11 @@ if (renderer) {
       playLight.emissiveIntensity = 0.35 + 0.35 * Math.sin(now / 160);
       needsRender = true;
     }
+    if (pov.state === 'thrown' && pov.arc) {
+      wrapper.position.y = pov.arc.y;
+    }
     if (needsRender || animating || moved) {
-      renderer.render(scene, camera);
+      if (mode === 'pov') renderer.render(povScene, povCamera); else renderer.render(scene, camera);
       needsRender = false;
     }
     requestAnimationFrame(tick);
@@ -1178,10 +1397,12 @@ if (renderer) {
 
   document.getElementById('loading').hidden = true;
   window.__kitReady = true;
+  if (location.hash === '#camera') setMode('camera');
 
   // Exposed for the next steps and for poking at in the console.
   window.kit = {
-    THREE, scene, camera, renderer, controls, world, device, cam, parts, LABELS, reducedMotion,
+    THREE, scene, camera, renderer, controls, world, device, cam, parts, LABELS, reducedMotion, povScene, povCamera, pov,
+    get mode() { return mode; }, setMode,
     setFocus, setApart, resetView, talk, toggleListen, selectForSwap, swapModules, requestRender: () => { needsRender = true; },
   };
 }
