@@ -1,4 +1,5 @@
-// Digital twin kit, v1 step 1: page shell and static model.
+// Digital twin kit, v1. Step 1: page shell and static model. Step 2: turn it,
+// take it apart, point at a part.
 // Three.js r170, vendored in assets/vendor/three (MIT, see LICENSE there).
 // The model is built from primitives. Each module is its own Group so later
 // steps can lift, pull apart and swap them.
@@ -6,6 +7,7 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 // ---------------------------------------------------------------------------
 // Text from the deck "OceanX KAI Kit Orientation" (Modules and Camera slides).
@@ -543,15 +545,23 @@ function buildDevice() {
     sound: [ SLOT_X, -SLOT_Y],
   };
   const modules = { notes: notesModule(), chat: chatModule(), map: mapModule(), sound: soundModule() };
+  const holders = {};
   for (const [key, m] of Object.entries(modules)) {
-    m.position.set(slots[key][0], slots[key][1], 0);
-    m.userData.slot = key;
-    device.add(m);
+    // The holder moves with the slot (take apart, swap); the module inside lifts on focus.
+    const holder = new THREE.Group();
+    holder.position.set(slots[key][0], slots[key][1], 0);
+    holder.userData.slot = key;
+    m.userData.part = key;
+    holder.add(m);
+    holders[key] = holder;
+    device.add(holder);
   }
   const spine = box(DEVICE.w - 0.06, DEVICE.h - 0.06, DEVICE.d - 0.06, M.ink, 0.03);
   spine.position.z = -0.005;
   device.add(spine);
+  device.userData.spine = spine;
   device.userData.modules = modules;
+  device.userData.holders = holders;
   device.userData.slots = slots;
   return device;
 }
@@ -560,8 +570,11 @@ function buildDevice() {
 // Camera module: separate unit on an orange lanyard.
 // ---------------------------------------------------------------------------
 function buildCamera() {
-  const g = new THREE.Group();
-  g.name = 'camera';
+  const outer = new THREE.Group();
+  outer.name = 'camera';
+  const g = new THREE.Group(); // body: lifts on focus, outer handles placement
+  g.userData.part = 'camera';
+  outer.add(g);
   const W = 0.52, H = 0.74, D = 0.16, F = D / 2;
 
   g.add(box(W, H, D, M.grey, 0.035));
@@ -603,7 +616,6 @@ function buildCamera() {
   light.position.set(-W / 2 - 0.01, 0.17, 0);
   light.scale.set(0.6, 1, 1);
   g.add(light);
-  g.userData.light = light.material;
   // Lanyard lugs and strap.
   for (const x of [-W / 2 + 0.05, W / 2 - 0.05]) {
     const lug = new THREE.Mesh(new THREE.TorusGeometry(0.022, 0.007, 10, 20), M.silver);
@@ -618,10 +630,12 @@ function buildCamera() {
     new THREE.Vector3(W / 2 + 0.08, H / 2 + 0.3, -0.04),
     new THREE.Vector3(W / 2 - 0.05, H / 2 + 0.03, 0),
   ]), 48, 0.014, 8, false), M.strap);
-  g.add(strap);
-  g.userData.strap = strap;
-  g.userData.size = { W, H, D };
-  return g;
+  outer.add(strap); // the strap stays put when the body lifts
+  outer.userData.strap = strap;
+  outer.userData.body = g;
+  outer.userData.light = light.material;
+  outer.userData.size = { W, H, D };
+  return outer;
 }
 
 function shadowPlane(w, h) {
@@ -634,10 +648,44 @@ function shadowPlane(w, h) {
 }
 
 // ---------------------------------------------------------------------------
+// Tiny tween helper (numeric properties on any object, e.g. a Vector3).
+// ---------------------------------------------------------------------------
+const tweens = [];
+const ease = {
+  outCubic: (t) => 1 - Math.pow(1 - t, 3),
+  inOutCubic: (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2),
+  outBack: (t) => { const c = 2.4; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); },
+};
+function tween(target, to, duration, easing = ease.outCubic, delay = 0, onDone) {
+  for (let i = tweens.length - 1; i >= 0; i--) {
+    if (tweens[i].target === target) tweens.splice(i, 1);
+  }
+  const scale = reducedMotion ? 0.3 : 1;
+  tweens.push({ target, to, from: null, start: performance.now() + delay * scale, duration: Math.max(1, duration * scale), easing, onDone });
+}
+function updateTweens(now) {
+  for (let i = tweens.length - 1; i >= 0; i--) {
+    const t = tweens[i];
+    if (now < t.start) continue;
+    if (!t.from) { t.from = {}; for (const k in t.to) t.from[k] = t.target[k]; }
+    const p = Math.min(1, (now - t.start) / t.duration);
+    const e = t.easing(p);
+    for (const k in t.to) t.target[k] = t.from[k] + (t.to[k] - t.from[k]) * e;
+    if (p >= 1) { tweens.splice(i, 1); if (t.onDone) t.onDone(); }
+  }
+  return tweens.length > 0;
+}
+
+// ---------------------------------------------------------------------------
 // Scene
 // ---------------------------------------------------------------------------
 const stage = document.getElementById('stage');
 const canvasEl = document.getElementById('view');
+const labelEl = document.getElementById('label');
+const labelName = document.getElementById('label-name');
+const labelLine = document.getElementById('label-line');
+const btnApart = document.getElementById('btn-apart');
+const btnReset = document.getElementById('btn-reset');
 
 function webglAvailable() {
   try {
@@ -698,10 +746,33 @@ if (renderer) {
   const camShadow = shadowPlane(1.1, 0.6);
   world.add(camShadow);
 
+  const parts = {
+    notes:  { group: device.userData.modules.notes,  screen: null },
+    chat:   { group: device.userData.modules.chat,   screen: null },
+    map:    { group: device.userData.modules.map,    screen: null },
+    sound:  { group: device.userData.modules.sound,  screen: null },
+    camera: { group: cam.userData.body, screen: null },
+  };
+  for (const key of ['notes', 'chat', 'map']) {
+    parts[key].group.traverse((o) => { if (o.userData.screenMaterial) parts[key].screen = o.userData.screenMaterial; });
+  }
+
+  // -------------------------------------------------------------------------
+  // Interaction 1: turn it. Drag to rotate, pinch or scroll to zoom, double-tap to reset.
+  // -------------------------------------------------------------------------
+  const controls = new OrbitControls(camera, canvasEl);
+  controls.enablePan = false;
+  controls.enableDamping = !reducedMotion;
+  controls.dampingFactor = 0.08;
+  controls.rotateSpeed = 0.7;
+  controls.zoomSpeed = 0.8;
+  controls.minPolarAngle = Math.PI / 2 - 0.65;
+  controls.maxPolarAngle = Math.PI / 2 + 0.45;
+
   // Portrait puts the camera module below the device, landscape beside it.
   function layout(aspect) {
     if (aspect < 0.9) {
-      cam.position.set(0.2, -DEVICE.h / 2 - 0.5, 0.12);
+      cam.position.set(0.2, -DEVICE.h / 2 - 0.56, 0.12);
       cam.rotation.set(-0.05, -0.3, 0.1);
     } else {
       cam.position.set(DEVICE.w / 2 + 0.5, -0.1, 0.05);
@@ -710,10 +781,11 @@ if (renderer) {
     camShadow.position.set(cam.position.x, cam.position.y - cam.userData.size.H / 2 - 0.03, cam.position.z + 0.05);
   }
 
-  // Fit the camera so the whole model is in view.
+  // Fit the camera so the whole model is in view, and remember that as home.
   const bounds = new THREE.Box3();
   const size = new THREE.Vector3();
   const center = new THREE.Vector3();
+  const home = { position: new THREE.Vector3(), target: new THREE.Vector3() };
   function frame(aspect) {
     cam.userData.strap.visible = false; // strap loop shouldn't push the device smaller
     bounds.setFromObject(world);
@@ -725,15 +797,153 @@ if (renderer) {
     const portrait = aspect < 0.9;
     const dist = Math.max(size.y / 2 / Math.tan(vfov / 2), size.x / 2 / Math.tan(hfov / 2)) * (portrait ? 1.06 : 1.12) + size.z / 2;
     const el = 0.18, az = portrait ? 0.2 : 0.3;
-    camera.position.set(
+    home.position.set(
       center.x + dist * Math.sin(az) * Math.cos(el),
       center.y + dist * Math.sin(el),
       center.z + dist * Math.cos(az) * Math.cos(el)
     );
-    camera.lookAt(center);
-    camera.userData.home = { position: camera.position.clone(), target: center.clone() };
+    home.target.copy(center);
+    controls.minDistance = dist * 0.5;
+    controls.maxDistance = dist * 1.6;
+    camera.position.copy(home.position);
+    controls.target.copy(home.target);
+    controls.update();
   }
 
+  function resetView() {
+    controls.enabled = false;
+    tween(camera.position, { x: home.position.x, y: home.position.y, z: home.position.z }, 550, ease.inOutCubic);
+    tween(controls.target, { x: home.target.x, y: home.target.y, z: home.target.z }, 550, ease.inOutCubic, 0, () => { controls.enabled = true; });
+  }
+  btnReset.disabled = false;
+  btnReset.addEventListener('click', resetView);
+  canvasEl.addEventListener('dblclick', resetView);
+
+  // -------------------------------------------------------------------------
+  // Interaction 2: take it apart, and click it back together.
+  // -------------------------------------------------------------------------
+  const APART = { x: 0.26, y: 0.17, z: 0.08 };
+  let apart = false;
+  function setApart(next) {
+    apart = next;
+    const holders = device.userData.holders;
+    const slots = device.userData.slots;
+    Object.keys(holders).forEach((key, i) => {
+      const h = holders[key];
+      const [sx, sy] = slots[h.userData.slot];
+      const delay = i * 45;
+      if (apart) {
+        tween(h.position, { x: sx + Math.sign(sx) * APART.x, y: sy + Math.sign(sy) * APART.y, z: APART.z }, 650, ease.outCubic, delay);
+      } else {
+        // Overshoot into the slot so it reads as a click.
+        tween(h.position, { x: sx, y: sy, z: 0 }, 520, ease.outBack, delay);
+      }
+    });
+    // The dark spine only exists to darken the seams; shrink it away while apart.
+    const spine = device.userData.spine;
+    if (apart) {
+      tween(spine.scale, { x: 0.001, y: 0.001, z: 0.001 }, 400, ease.inOutCubic, 0, () => { spine.visible = false; });
+    } else {
+      spine.visible = true;
+      tween(spine.scale, { x: 1, y: 1, z: 1 }, 300, ease.outCubic, 250);
+    }
+    // LLM-written: button label toggles with the state
+    btnApart.textContent = apart ? 'Put together' : 'Take apart';
+    btnApart.setAttribute('aria-pressed', String(apart));
+  }
+  btnApart.disabled = false;
+  btnApart.setAttribute('aria-pressed', 'false');
+  btnApart.addEventListener('click', () => setApart(!apart));
+
+  // -------------------------------------------------------------------------
+  // Interaction 3: point at a part. Hover on desktop, tap on phone.
+  // -------------------------------------------------------------------------
+  const raycaster = new THREE.Raycaster();
+  const pointer = new THREE.Vector2();
+  const hitTargets = Object.values(parts).map((p) => p.group);
+  let focused = null;
+  const worldPos = new THREE.Vector3();
+
+  function partAt(clientX, clientY) {
+    const r = canvasEl.getBoundingClientRect();
+    pointer.set(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
+    raycaster.setFromCamera(pointer, camera);
+    const hits = raycaster.intersectObjects(hitTargets, true);
+    for (const hit of hits) {
+      let o = hit.object;
+      while (o && !o.userData.part) o = o.parent;
+      if (o) return o.userData.part;
+    }
+    return null;
+  }
+
+  function placeLabel(key) {
+    // On narrow screens, keep the label away from the part it describes.
+    if (window.innerWidth >= 760 && window.innerWidth / window.innerHeight >= 1) {
+      labelEl.classList.remove('label--top');
+      return;
+    }
+    parts[key].group.getWorldPosition(worldPos).project(camera);
+    const screenY = (1 - worldPos.y) / 2; // 0 top, 1 bottom of the stage
+    labelEl.classList.toggle('label--top', screenY > 0.55);
+  }
+
+  function setFocus(key) {
+    if (key === focused) return;
+    if (focused) {
+      const prev = parts[focused];
+      tween(prev.group.position, { z: 0 }, 260);
+      if (prev.screen) tween(prev.screen, { emissiveIntensity: 0.55 }, 260);
+      if (focused === 'camera') tween(cam.userData.light, { emissiveIntensity: 0 }, 260);
+    }
+    focused = key;
+    if (!key) {
+      labelEl.hidden = true;
+      return;
+    }
+    const p = parts[key];
+    tween(p.group.position, { z: 0.07 }, 320, ease.outBack);
+    if (p.screen) tween(p.screen, { emissiveIntensity: 1.15 }, 320);
+    if (key === 'camera') tween(cam.userData.light, { emissiveIntensity: 1.3 }, 320);
+    labelName.textContent = LABELS[key].name;
+    labelLine.textContent = LABELS[key].line;
+    placeLabel(key);
+    labelEl.hidden = false;
+  }
+
+  // Pointer handling: hover for mouse, tap for touch and pen. Drags go to OrbitControls.
+  let down = null;
+  let lastTap = 0;
+  canvasEl.addEventListener('pointerdown', (e) => {
+    down = { x: e.clientX, y: e.clientY, t: performance.now(), type: e.pointerType };
+  });
+  canvasEl.addEventListener('pointermove', (e) => {
+    if (e.pointerType !== 'mouse' || e.buttons) return;
+    setFocus(partAt(e.clientX, e.clientY));
+  });
+  canvasEl.addEventListener('pointerleave', (e) => {
+    if (e.pointerType === 'mouse') setFocus(null);
+  });
+  canvasEl.addEventListener('pointerup', (e) => {
+    if (!down) return;
+    const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
+    const held = performance.now() - down.t;
+    down = null;
+    if (moved > 10 || held > 400) return; // a drag, not a tap
+    const now = performance.now();
+    if (e.pointerType !== 'mouse' && now - lastTap < 320) {
+      lastTap = 0;
+      resetView();
+      return;
+    }
+    lastTap = now;
+    setFocus(partAt(e.clientX, e.clientY));
+  });
+  canvasEl.addEventListener('pointercancel', () => { down = null; });
+
+  // -------------------------------------------------------------------------
+  // Sizing and render loop
+  // -------------------------------------------------------------------------
   let needsRender = true;
   function resize() {
     const w = stage.clientWidth, h = stage.clientHeight;
@@ -743,13 +953,17 @@ if (renderer) {
     camera.updateProjectionMatrix();
     layout(camera.aspect);
     frame(camera.aspect);
+    if (focused) placeLabel(focused);
     needsRender = true;
   }
   new ResizeObserver(resize).observe(stage);
   resize();
+  controls.addEventListener('change', () => { needsRender = true; });
 
-  function tick() {
-    if (needsRender) {
+  function tick(now) {
+    const animating = updateTweens(now);
+    const moved = controls.update();
+    if (needsRender || animating || moved) {
       renderer.render(scene, camera);
       needsRender = false;
     }
@@ -761,5 +975,8 @@ if (renderer) {
   window.__kitReady = true;
 
   // Exposed for the next steps and for poking at in the console.
-  window.kit = { THREE, scene, camera, renderer, world, device, cam, LABELS, reducedMotion, requestRender: () => { needsRender = true; } };
+  window.kit = {
+    THREE, scene, camera, renderer, controls, world, device, cam, parts, LABELS, reducedMotion,
+    setFocus, setApart, resetView, requestRender: () => { needsRender = true; },
+  };
 }
