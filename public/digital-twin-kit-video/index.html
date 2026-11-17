@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <!-- LLM-written: page title -->
+  <title>KAI kit — the video</title>
+  <!-- LLM-written: page description -->
+  <meta name="description" content="A 35-second video of every interaction in the KAI kit.">
+  <!-- Absolute paths, so the page works at both /digital-twin-kit-video and /digital-twin-kit-video/ -->
+  <link rel="stylesheet" href="/digital-twin-kit-video/assets/style.css">
+</head>
+<body>
+  <header class="top">
+    <!-- Product names from the deck "OceanX KAI Kit Orientation" -->
+    <p class="brand">OCEANX</p>
+    <h1>KAI</h1>
+  </header>
+
+  <main class="wrap">
+    <!-- LLM-written: headline and standfirst -->
+    <h2>The kit in 35 seconds</h2>
+    <p class="lede">Everything the model does, played once through. Sound on.</p>
+
+    <div class="shape" role="group" aria-label="Video shape">
+      <!-- LLM-written: shape buttons -->
+      <button type="button" id="btn-portrait" aria-pressed="false">Phone</button>
+      <button type="button" id="btn-landscape" aria-pressed="false">Wide</button>
+    </div>
+
+    <div class="player" id="player" data-shape="portrait">
+      <video id="film" controls playsinline preload="metadata"></video>
+    </div>
+
+    <p class="note" id="dl">
+      <!-- LLM-written: download link text -->
+      <a id="download" href="/digital-twin-kit-video/assets/kit-tour-portrait.mp4" download>Download this file</a>
+    </p>
+
+    <!-- LLM-written: chapter list, matching the captions burned into the video -->
+    <ol class="beats">
+      <li><b>0:00</b> Turn it</li>
+      <li><b>0:03</b> Take it apart</li>
+      <li><b>0:05</b> Swap the modules</li>
+      <li><b>0:08</b> Draw on the screen</li>
+      <li><b>0:13</b> Talk to Kai</li>
+      <li><b>0:20</b> Listen to the deep</li>
+      <li><b>0:24</b> Where the ship is</li>
+      <li><b>0:28</b> What the camera sees</li>
+    </ol>
+
+    <!-- LLM-written: credits note. The voices are macOS text-to-speech, recorded for this video only. -->
+    <p class="note">The two voices are computer-generated and exist only in this video. The underwater
+      recording is from the National Park Service (Glacier Bay), public domain.</p>
+
+    <p class="note"><a class="back" href="/digital-twin-kit">Open the model and try it yourself →</a></p>
+  </main>
+
+  <script>
+    // LLM-written page behaviour. Two cuts of the same run; pick the one that fits the screen,
+    // and let the visitor switch. /digital-twin-kit-video#wide opens the wide cut straight away.
+    var CUTS = {
+      portrait: { src: '/digital-twin-kit-video/assets/kit-tour-portrait.mp4', poster: '/digital-twin-kit-video/assets/kit-tour-portrait-poster.jpg' },
+      landscape: { src: '/digital-twin-kit-video/assets/kit-tour-landscape.mp4', poster: '/digital-twin-kit-video/assets/kit-tour-landscape-poster.jpg' }
+    };
+    var film = document.getElementById('film');
+    var player = document.getElementById('player');
+    var download = document.getElementById('download');
+    var buttons = { portrait: document.getElementById('btn-portrait'), landscape: document.getElementById('btn-landscape') };
+    var current = null;
+
+    function show(shape) {
+      if (shape === current) return;
+      var cut = CUTS[shape];
+      current = shape;
+      film.pause();
+      film.poster = cut.poster;
+      film.src = cut.src;
+      film.load();
+      player.dataset.shape = shape;
+      download.href = cut.src;
+      for (var key in buttons) buttons[key].setAttribute('aria-pressed', String(key === shape));
+    }
+
+    buttons.portrait.addEventListener('click', function () { show('portrait'); });
+    buttons.landscape.addEventListener('click', function () { show('landscape'); });
+
+    var asked = location.hash === '#wide' ? 'landscape' : location.hash === '#phone' ? 'portrait' : null;
+    show(asked || (window.innerWidth < window.innerHeight ? 'portrait' : 'landscape'));
+  </script>
+</body>
+</html>
