@@ -388,8 +388,9 @@ function setChatCaption(caption, t) {
   TEX.chat.needsUpdate = true;
 }
 
-// Map screen. Gold contour map with a turtle, following kit-reference.jpg. The static part is
-// drawn once; the readouts are redrawn on top as the replay runs (see drawMapReadout).
+// Map screen. Gold contour map with a turtle, following kit-reference.jpg. The grid and the
+// contours are drawn once; the turtle, its track and the readouts are redrawn on top as the
+// replay runs (see drawMapReadout), so the turtle swims to wherever the coordinates say.
 function drawMapBase(ctx, w, h) {
   ctx.fillStyle = '#0f120f';
   ctx.fillRect(0, 0, w, h);
@@ -411,32 +412,6 @@ function drawMapBase(ctx, w, h) {
     }
     ctx.stroke();
   }
-  // turtle outline
-  ctx.save();
-  ctx.translate(w * 0.42, h * 0.52);
-  ctx.rotate(-0.35);
-  ctx.lineWidth = 2.5;
-  ctx.strokeStyle = '#e6b94a';
-  ctx.fillStyle = 'rgba(15, 18, 15, 0.9)';
-  const flipper = (x, y, rot) => {
-    ctx.save(); ctx.translate(x, y); ctx.rotate(rot);
-    ctx.beginPath(); ctx.ellipse(0, 0, 42, 16, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-    ctx.restore();
-  };
-  flipper(-62, -40, -0.7); flipper(62, -40, 0.7); flipper(-58, 44, 0.9); flipper(58, 44, -0.9);
-  ctx.beginPath(); ctx.ellipse(0, 72, 10, 16, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); // tail
-  ctx.beginPath(); ctx.ellipse(0, -88, 22, 28, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); // head
-  ctx.beginPath(); ctx.ellipse(0, 0, 70, 66, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); // shell
-  ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.ellipse(0, 0, 46, 42, 0, 0, Math.PI * 2); ctx.stroke();
-  for (let i = 0; i < 6; i++) {
-    const a = i * Math.PI / 3;
-    ctx.beginPath();
-    ctx.moveTo(Math.cos(a) * 46, Math.sin(a) * 42);
-    ctx.lineTo(Math.cos(a) * 70, Math.sin(a) * 66);
-    ctx.stroke();
-  }
-  ctx.restore();
   for (let i = 0; i < 4; i++) {
     ctx.fillStyle = i < 3 ? '#e6b94a' : 'rgba(230, 185, 74, 0.3)';
     ctx.fillRect(18 + i * 18, h - 30, 13, 13);
@@ -447,6 +422,55 @@ mapBase.width = 512; mapBase.height = 420;
 drawMapBase(mapBase.getContext('2d'), mapBase.width, mapBase.height);
 TEX.map = canvasTexture(512, 420, (ctx) => ctx.drawImage(mapBase, 0, 0));
 
+// The turtle is the chart's marker for the ship. It is redrawn with the readouts rather than
+// baked into the base, so it moves as LAT and LON change, turns to face the way it is going,
+// and sinks a little out of sight while the depth counts down.
+function drawTurtle(ctx, x, y, rot, scale, flap, fade) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rot);
+  ctx.scale(scale, scale);
+  ctx.globalAlpha = fade;
+  // Undo the scale on the strokes, so the outline keeps the same weight at any size.
+  ctx.lineWidth = 2.5 / scale;
+  ctx.strokeStyle = '#e6b94a';
+  ctx.fillStyle = 'rgba(15, 18, 15, 0.9)';
+  const flipper = (fx, fy, frot) => {
+    ctx.save(); ctx.translate(fx, fy); ctx.rotate(frot);
+    ctx.beginPath(); ctx.ellipse(0, 0, 42, 16, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.restore();
+  };
+  flipper(-62, -40, -0.7 - flap); flipper(62, -40, 0.7 + flap);
+  flipper(-58, 44, 0.9 + flap * 0.5); flipper(58, 44, -0.9 - flap * 0.5);
+  ctx.beginPath(); ctx.ellipse(0, 72, 10, 16, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); // tail
+  ctx.beginPath(); ctx.ellipse(0, -88, 22, 28, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); // head
+  ctx.beginPath(); ctx.ellipse(0, 0, 70, 66, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); // shell
+  ctx.lineWidth = 1.5 / scale;
+  ctx.beginPath(); ctx.ellipse(0, 0, 46, 42, 0, 0, Math.PI * 2); ctx.stroke();
+  for (let i = 0; i < 6; i++) {
+    const a = i * Math.PI / 3;
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(a) * 46, Math.sin(a) * 42);
+    ctx.lineTo(Math.cos(a) * 70, Math.sin(a) * 66);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// Where a position sits on the chart. The replayed points' own bounding box is stretched over
+// the middle of the screen, north at the top, with room left for the readouts and the place name.
+const MAP_SPAN = {
+  lat0: Math.min(...RADAR_POINTS.map((p) => p.lat)),
+  lat1: Math.max(...RADAR_POINTS.map((p) => p.lat)),
+  lon0: Math.min(...RADAR_POINTS.map((p) => p.lon)),
+  lon1: Math.max(...RADAR_POINTS.map((p) => p.lon)),
+};
+function mapPoint(lat, lon, w, h) {
+  const u = (lon - MAP_SPAN.lon0) / (MAP_SPAN.lon1 - MAP_SPAN.lon0);
+  const v = (MAP_SPAN.lat1 - lat) / (MAP_SPAN.lat1 - MAP_SPAN.lat0);
+  return { x: w * 0.22 + u * w * 0.58, y: h * 0.36 + v * h * 0.40 };
+}
+
 function fmtCoord(v, pos, neg) {
   return Math.abs(v).toFixed(2) + '\u00b0 ' + (v >= 0 ? pos : neg);
 }
@@ -455,6 +479,21 @@ function drawMapReadout(r) {
   const ctx = c.getContext('2d');
   const w = c.width, h = c.height;
   ctx.drawImage(mapBase, 0, 0);
+  // The leg being travelled, then the turtle at the position the readouts are showing.
+  const leg = mapPoint(r.from.lat, r.from.lon, w, h);
+  const target = mapPoint(r.point.lat, r.point.lon, w, h);
+  const here = mapPoint(r.lat, r.lon, w, h);
+  ctx.save();
+  ctx.strokeStyle = 'rgba(230, 185, 74, 0.4)';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([5, 7]);
+  ctx.beginPath(); ctx.moveTo(leg.x, leg.y); ctx.lineTo(target.x, target.y); ctx.stroke();
+  ctx.restore();
+  ctx.fillStyle = '#e6b94a';
+  ctx.beginPath(); ctx.arc(target.x, target.y, 3.5, 0, Math.PI * 2); ctx.fill();
+  const heading = Math.atan2(target.y - leg.y, target.x - leg.x) + Math.PI / 2;
+  const flap = reducedMotion ? 0 : Math.sin(r.t / 420) * (r.moving ? 0.34 : 0.12);
+  drawTurtle(ctx, here.x, here.y, heading, 0.85 - 0.16 * r.dive, flap, 1 - 0.35 * r.dive);
   ctx.fillStyle = 'rgba(15, 18, 15, 0.7)';
   ctx.fillRect(10, 10, 190, 76);
   ctx.fillStyle = '#e6b94a';
@@ -501,7 +540,7 @@ function radarState(now) {
   } else {
     dep = to.depth * (1 - ease.inOutCubic((u - RADAR.travel - RADAR.down - RADAR.hold) / RADAR.up));
   }
-  return { lat, lon, dep, point: to, moving: u < RADAR.travel };
+  return { lat, lon, dep, point: to, from, moving: u < RADAR.travel, dive: to.depth ? dep / to.depth : 0, t: total };
 }
 
 // Sound module speaker grille: dark disc with cream slot bars.
@@ -1665,7 +1704,9 @@ if (renderer) {
   function tick(now) {
     const animating = updateTweens(now);
     const moved = controls.update();
-    if (mode === 'kit' && now - mapDrawnAt > 200) {
+    // The map is redrawn faster while it is the module being looked at, so the turtle's swim
+    // reads as swimming rather than as a marker jumping along.
+    if (mode === 'kit' && now - mapDrawnAt > (focused === 'map' ? 80 : 200)) {
       mapDrawnAt = now;
       drawMapReadout(radarState(now));
       needsRender = true;
