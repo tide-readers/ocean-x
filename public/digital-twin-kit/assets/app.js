@@ -890,6 +890,7 @@ const labelName = document.getElementById('label-name');
 const labelLine = document.getElementById('label-line');
 const labelHint = document.getElementById('label-hint');
 const labelChoices = document.getElementById('label-choices');
+const tourCaption = document.getElementById('tour-caption');
 const btnApart = document.getElementById('btn-apart');
 const btnReset = document.getElementById('btn-reset');
 const btnCamera = document.getElementById('btn-camera');
@@ -1639,6 +1640,91 @@ if (renderer) {
   btnAgain.addEventListener('click', () => pov.reset());
 
   // -------------------------------------------------------------------------
+  // Self-playing tour (/digital-twin-kit#tour). Drives the page through every
+  // interaction with a caption on each beat, then loops. Used as an attract
+  // screen and to record the share video. Captions are LLM-written.
+  // -------------------------------------------------------------------------
+  function drawInk(points, ms = 900) {
+    if (!drawing) return;
+    const step = ms / points.length;
+    points.forEach((p, i) => setTimeout(() => {
+      if (drawing) inkTo({ x: p[0], y: p[1] }, i === 0);
+    }, i * step));
+  }
+  const inkWave = Array.from({ length: 22 }, (_, i) => {
+    const u = i / 21;
+    return [0.12 + u * 0.76, 0.60 + Math.sin(u * Math.PI * 2.2) * 0.1];
+  });
+  const inkRing = Array.from({ length: 26 }, (_, i) => {
+    const a = (i / 25) * Math.PI * 2;
+    return [0.5 + Math.cos(a) * 0.17, 0.36 + Math.sin(a) * 0.2];
+  });
+
+  const TOUR_STEPS = [
+    { at: 0,     say: 'Turn it',              run: () => { tween(world.rotation, { y: 0.38 }, 1700, ease.inOutCubic); } },
+    { at: 1800,                               run: () => { tween(world.rotation, { y: -0.12 }, 1700, ease.inOutCubic); } },
+    { at: 3500,  say: 'Take it apart',        run: () => { tween(world.rotation, { y: 0 }, 600); setApart(true); } },
+    { at: 5500,  say: 'Swap the modules',     run: () => { selectForSwap('notes'); } },
+    { at: 6300,                               run: () => { swapModules('notes', 'sound'); } },
+    { at: 7500,                               run: () => { setApart(false); } },
+    { at: 8500,  say: 'Draw on the screen',   run: () => { setDrawing(true); } },
+    { at: 10200,                              run: () => { drawInk(inkWave, 1100); } },
+    { at: 11500,                              run: () => { drawInk(inkRing, 1000); } },
+    { at: 12700,                              run: () => { setDrawing(false); } },
+    { at: 13000, say: 'Talk to Kai',          run: () => { setFocus('chat'); talk.start(); } },
+    { at: 14200,                              run: () => { talk.choose(0); } },
+    { at: 19600,                              run: () => { talk.stop(); } },
+    { at: 20000, say: 'Listen to the deep',   run: () => { setFocus('sound'); stepSound(1); } },
+    { at: 21000,                              run: () => { toggleListen(); } },
+    { at: 24200,                              run: () => { if (listening) toggleListen(); } },
+    // Jump the replay to the start of a dive so the depth counts down on screen.
+    { at: 24500, say: 'Where the ship is',    run: () => { setFocus('map'); RADAR.t0 = performance.now() - RADAR.travel; } },
+    { at: 28000, say: 'What the camera sees', run: () => { setMode('camera'); } },
+    { at: 29800,                              run: () => { setMode('pov'); } },
+    { at: 31800,                              run: () => { pov.throwInto('plastic'); } },
+    { at: 35000,                              run: () => { tour.restart(); } },
+  ];
+
+  const tour = {
+    running: false,
+    timers: [],
+    start() {
+      if (this.running) return;
+      this.running = true;
+      document.body.dataset.tour = 'on';
+      this.run();
+    },
+    run() {
+      this.timers = TOUR_STEPS.map((s) => setTimeout(() => {
+        if (s.say) this.caption(s.say);
+        s.run();
+      }, s.at));
+    },
+    caption(text) {
+      tourCaption.textContent = text;
+      tourCaption.classList.add('show');
+    },
+    restart() {
+      // Back to the opening state, then play again.
+      setMode('kit');
+      if (apart) setApart(false);
+      clearInk();
+      setFocus(null);
+      world.rotation.y = 0;
+      tourCaption.classList.remove('show');
+      this.timers.forEach(clearTimeout);
+      setTimeout(() => this.run(), 600);
+    },
+    stop() {
+      this.running = false;
+      this.timers.forEach(clearTimeout);
+      this.timers = [];
+      delete document.body.dataset.tour;
+      tourCaption.classList.remove('show');
+    },
+  };
+
+  // -------------------------------------------------------------------------
   // Sizing and render loop
   // -------------------------------------------------------------------------
   let needsRender = true;
@@ -1693,11 +1779,12 @@ if (renderer) {
   document.getElementById('loading').hidden = true;
   window.__kitReady = true;
   if (location.hash === '#camera') setMode('camera');
+  if (location.hash === '#tour') tour.start();
 
   // Exposed for the next steps and for poking at in the console.
   window.kit = {
     THREE, scene, camera, renderer, controls, world, device, cam, parts, LABELS, reducedMotion, povScene, povCamera, pov,
-    get mode() { return mode; }, setMode, radarState, RADAR_POINTS,
+    get mode() { return mode; }, setMode, radarState, RADAR_POINTS, RADAR, tour, drawInk,
     setFocus, setApart, resetView, talk, toggleListen, stepSound, setDrawing, clearInk, get drawing() { return drawing; }, get soundIndex() { return soundIndex; }, selectForSwap, swapModules, requestRender: () => { needsRender = true; },
   };
 }
